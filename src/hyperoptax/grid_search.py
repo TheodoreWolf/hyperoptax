@@ -29,7 +29,6 @@ class GridSearch(BaseOptimiser):
             domain = self.domain
         else:
             domain = self.domain[:n_iterations]
-        # could use jax.lax.fori_loop here for pure jax
         for i in range(0, domain.shape[0], self.n_parallel):
             results.append(
                 jax.vmap(self.f, in_axes=(0,) * domain.shape[1])(
@@ -43,6 +42,7 @@ class GridSearch(BaseOptimiser):
     # TODO: pmap support
     # TODO: handle multiple maxima properly
     # TODO: add support for minimisation
+    # TODO: use jax.lax.fori_loop here for pure jax
 
 
 class RandomSearch(GridSearch):
