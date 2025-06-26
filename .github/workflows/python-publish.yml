@@ -26,12 +26,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build pytest
+        pip install build twine
         pip install -e .
     
     - name: Run tests
       run: |
-        pytest tests/ -v
+        python -m unittest discover tests/ -v
 
   build-and-publish:
     needs: test
@@ -51,7 +51,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install build twine
         echo "Verifying twine installation:"
-        twine --version
+        python -m twine --version
     
     - name: Build package
       run: python -m build
@@ -59,7 +59,7 @@ jobs:
     - name: Check package
       run: |
         echo "Checking package with twine:"
-        twine check dist/*
+        python -m twine check dist/*
         echo "Package check completed successfully"
     
     - name: Publish to PyPI
