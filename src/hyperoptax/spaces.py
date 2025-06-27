@@ -1,3 +1,5 @@
+from typing import Optional
+
 from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
@@ -5,22 +7,41 @@ import jax.numpy as jnp
 
 @dataclass
 class BaseSpace:
-    start: float
-    end: float
-    n_points: int
+    start: Optional[float | int] = None
+    end: Optional[float | int] = None
+    n_points: Optional[float | int] = None
 
     def __len__(self) -> int:
         return self.n_points
-    
+
     @property
     def array(self) -> jax.Array:
         raise NotImplementedError
-    
+
     def __getitem__(self, idx: int) -> jax.Array:
         return self.array[idx]
-    
+
     def __iter__(self):
         return iter(self.array)
+
+
+@dataclass
+class ArbitrarySpace(BaseSpace):
+    values: Optional[list[int | float]] = None
+    name: str = "arbitrary_space"
+
+    def __post_init__(self):
+        assert self.array.ndim == 1, (
+            "I don't support arrays that aren't one dimensional (yet), "
+            "try entering each dimension as a separate space."
+        )
+        self.start = jnp.min(self.array)
+        self.end = jnp.max(self.array)
+        self.n_points = len(self.array)
+
+    @property
+    def array(self) -> jax.Array:
+        return jnp.array(self.values)
 
 
 @dataclass
@@ -34,7 +55,7 @@ class LinearSpace(BaseSpace):
 
 @dataclass
 class LogSpace(BaseSpace):
-    log_base: float = 10
+    log_base: float | int = 10
     name: str = "log_space"
 
     @property
@@ -47,6 +68,7 @@ class LogSpace(BaseSpace):
     def log(self, x: float) -> float:
         # conersion of log base
         return jnp.log(x) / jnp.log(self.log_base)
+
 
 # TODO; quantise version of each
 # TODO: add distribution versions
