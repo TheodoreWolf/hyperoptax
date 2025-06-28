@@ -41,8 +41,8 @@ class TestGridSearch(unittest.TestCase):
             return -(x**2) + 10
 
         domain = {"x": LinearSpace(-1, 0, 1000)}
-        grid_search = GridSearch(domain, f, n_parallel=10)
-        result = grid_search.optimise()
+        grid_search = GridSearch(domain, f)
+        result = grid_search.optimise(n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0])))
 
 
