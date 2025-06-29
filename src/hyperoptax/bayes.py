@@ -76,7 +76,6 @@ class BayesOptimiser(BaseOptimiser):
 
             return X_seen, y_seen, seen_idx
 
-        # TODO: fix the bug where points are being evaluated multiple times
         (X_seen, y_seen, seen_idx) = jax.lax.fori_loop(
             0, n_iterations // n_parallel, _inner_loop, (X_seen, y_seen, seen_idx)
         )
@@ -99,7 +98,7 @@ class BayesOptimiser(BaseOptimiser):
             max_idx = jnp.where(y_seen == y_seen.max())
         else:
             max_idx = jnp.where(y_seen == y_seen.min())
-        return X_seen[max_idx]
+        return X_seen[max_idx].flatten()
 
     def fit_gp(self, X: jax.Array, y: jax.Array):
         X_test = self.domain
