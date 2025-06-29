@@ -27,6 +27,8 @@ class BaseOptimiser(ABC):
         n_parallel: int,
         jit: bool = False,
         maximise: bool = True,
+        pmap: bool = False,
+        save_results: bool = False,
     ):
         raise NotImplementedError
 

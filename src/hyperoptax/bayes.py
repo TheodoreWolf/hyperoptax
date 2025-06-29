@@ -1,5 +1,5 @@
 from typing import Callable
-
+import logging
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
@@ -8,6 +8,8 @@ from hyperoptax.base import BaseOptimiser
 from hyperoptax.kernels import BaseKernel, RBF
 from hyperoptax.spaces import BaseSpace
 from hyperoptax.aquisition import BaseAquisition, UCB
+
+logger = logging.getLogger(__name__)
 
 
 class BayesOptimiser(BaseOptimiser):
@@ -29,7 +31,6 @@ class BayesOptimiser(BaseOptimiser):
         n_parallel: int = 10,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
-        map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
         idx = jax.random.choice(
             key,
             jnp.arange(len(self.domain)),
@@ -41,7 +42,7 @@ class BayesOptimiser(BaseOptimiser):
         X_seen = jnp.zeros((n_iterations, self.domain.shape[1]))
         X_seen = X_seen.at[:n_parallel].set(self.domain[idx])
         X_seen = X_seen.at[n_parallel:].set(self.domain[idx[0]])
-        results = map_f(*X_seen[:n_parallel].T)
+        results = self.map_f(*X_seen[:n_parallel].T)
 
         y_seen = jnp.zeros(n_iterations)
         y_seen = y_seen.at[:n_parallel].set(results)
@@ -60,7 +61,7 @@ class BayesOptimiser(BaseOptimiser):
             )
 
             candidate_points = self.domain[candidate_idxs]
-            results = map_f(*candidate_points.T)
+            results = self.map_f(*candidate_points.T)
             X_seen = jax.lax.dynamic_update_slice(
                 X_seen, candidate_points, (n_parallel + i * n_parallel, 0)
             )
@@ -87,13 +88,30 @@ class BayesOptimiser(BaseOptimiser):
         n_parallel: int,
         jit: bool = False,
         maximise: bool = True,
+        pmap: bool = False,
+        save_results: bool = False,
     ):
+        if pmap:
+            n_devices = jax.device_count()
+            self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
+            if n_devices != n_parallel:
+                logger.warning(
+                    f"Using pmap with {n_devices} devices, "
+                    f"but {n_parallel} parallel evaluations was requested."
+                    f"Overriding n_parallel from {n_parallel} to {n_devices}."
+                )
+                n_parallel = n_devices
+        else:
+            self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
+
         if jit:
             X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
                 n_iterations, n_parallel
             )
         else:
             X_seen, y_seen = self.search(n_iterations, n_parallel)
+        if save_results:
+            self.results = X_seen, y_seen
         if maximise:
             max_idx = jnp.where(y_seen == y_seen.max())
         else:
@@ -113,6 +131,8 @@ class BayesOptimiser(BaseOptimiser):
         y_mean = K_trans @ w
         V = jsp.linalg.solve_triangular(L, K_trans.T, lower=True)
         y_var = self.kernel.diag(X_test)
+        # hack to avoid doing the whole matrix multiplication
+        # https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/gaussian_process/_gpr.py#L475
         y_var -= jnp.einsum("ij,ji->i", V.T, V)
 
         return y_mean, jnp.sqrt(jnp.abs(y_var))

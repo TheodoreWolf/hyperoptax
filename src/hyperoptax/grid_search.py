@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 class GridSearch(BaseOptimiser):
     def __init__(self, domain: dict[str, BaseSpace], f: Callable, pmap: bool = False):
         super().__init__(domain, f)
-        self.pmap = pmap
 
     def search(
         self,
@@ -26,18 +25,6 @@ class GridSearch(BaseOptimiser):
             n_iterations = domain.shape[0]
         else:
             domain = self.domain[:n_iterations]
-
-        if self.pmap:
-            n_devices = jax.device_count()
-            map_f = jax.pmap(self.f, in_axes=(0,) * domain.shape[1])
-            logger.warning(
-                f"Using pmap with {n_devices} devices, "
-                f"but {n_parallel} parallel evaluations was requested."
-                f"Overriding n_parallel from {n_parallel} to {n_devices}."
-            )
-            n_parallel = n_devices
-        else:
-            map_f = jax.vmap(self.f, in_axes=(0,) * domain.shape[1])
 
         # Number of batches we need to cover all requested iterations
         n_batches = (n_iterations + n_parallel - 1) // n_parallel
@@ -56,7 +43,7 @@ class GridSearch(BaseOptimiser):
                 (n_parallel, n_dims),
             )
 
-            batch_results = map_f(*batch.T)
+            batch_results = self.map_f(*batch.T)
             return start_idx + n_parallel, batch_results
 
         # Scan over all batches of parameters
@@ -73,20 +60,33 @@ class GridSearch(BaseOptimiser):
         n_parallel: int = 10,
         jit: bool = False,
         maximise: bool = True,
+        pmap: bool = False,
+        save_results: bool = False,
     ):
+        if pmap:
+            n_devices = jax.device_count()
+            self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
+            logger.warning(
+                f"Using pmap with {n_devices} devices, "
+                f"but {n_parallel} parallel evaluations was requested."
+                f"Overriding n_parallel from {n_parallel} to {n_devices}."
+            )
+            n_parallel = n_devices
+        else:
+            self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
         if jit:
             results = jax.jit(self.search, static_argnums=(0, 1))(
                 n_iterations, n_parallel
             )
         else:
             results = self.search(n_iterations, n_parallel)
+        if save_results:
+            self.results = results
         # Identify (potentially multiple) maxima
         if maximise:
             max_idxs = jnp.where(results == results.max())[0]
         else:
             max_idxs = jnp.where(results == results.min())[0]
-        # save the results for later use
-        self.results = results
         return self.domain[max_idxs].flatten()
 
 

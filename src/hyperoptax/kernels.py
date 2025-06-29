@@ -13,8 +13,10 @@ class BaseKernel(ABC):
     @abstractmethod
     def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
         raise NotImplementedError
-# TODO: add basic operations between kernels
 
+
+# TODO: add basic operations between kernels
+# TODO: add Matern kernel
 
 class RBF(BaseKernel):
     def __init__(self, length_scale: float = 1.0):

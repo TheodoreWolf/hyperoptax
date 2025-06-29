@@ -44,7 +44,9 @@ class UCB(BaseAquisition):
         # Replace acquisition values of seen points with -inf so they are never selected.
         masked_acq = jnp.where(seen_mask, -jnp.inf, acq_vals)
 
-        return jnp.argsort(masked_acq,)[-n_points:]
+        return jnp.argsort(
+            masked_acq,
+        )[-n_points:]
 
     def get_max(
         self, mean: jax.Array, std: jax.Array, X: jax.Array, seen_idx: jax.Array
