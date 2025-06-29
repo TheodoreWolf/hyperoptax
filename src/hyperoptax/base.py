@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 
 
+# TODO: make sure dictionary is ordered
 class BaseOptimiser(ABC):
     def __init__(self, domain: dict[str, jax.Array], f: Callable):
         self.f = f
@@ -20,6 +21,15 @@ class BaseOptimiser(ABC):
         self.domain = grid.reshape(n_args, n_points).T
 
     @abstractmethod
-    def optimise(self, n_iterations: int, n_parallel: int):
+    def optimise(
+        self,
+        n_iterations: int,
+        n_parallel: int,
+        jit: bool = False,
+        maximise: bool = True,
+    ):
         raise NotImplementedError
 
+    @abstractmethod
+    def search(self, n_iterations: int, n_parallel: int):
+        raise NotImplementedError

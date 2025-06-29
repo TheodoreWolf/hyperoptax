@@ -1,5 +1,6 @@
 import unittest
 
+import jax
 import jax.numpy as jnp
 
 from hyperoptax.grid_search import GridSearch, RandomSearch
@@ -45,6 +46,14 @@ class TestGridSearch(unittest.TestCase):
         result = grid_search.optimise(n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0])))
 
+    def test_jit(self):
+        def f(x):
+            return -(x**2) + 10
+
+        domain = {"x": LinearSpace(-1, 0, 1000)}
+        grid_search = GridSearch(domain, f)
+        result = grid_search.optimise(n_iterations=1000, n_parallel=10, jit=True)
+        self.assertTrue(jnp.allclose(result, jnp.array([0])))
 
 
 class TestRandomSearch(unittest.TestCase):
@@ -56,7 +65,3 @@ class TestRandomSearch(unittest.TestCase):
         random_search = RandomSearch(domain, f)
         self.assertEqual(random_search.domain.shape[0], len(domain["x"]))
         self.assertFalse(jnp.allclose(random_search.domain, domain["x"].array))
-
-
-
-    

@@ -11,15 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 class GridSearch(BaseOptimiser):
-    # TODO: dicts are not ordered, we might have some parameters that get swapped
-    def __init__(self, domain: dict[str, BaseSpace], f: Callable):
+    def __init__(self, domain: dict[str, BaseSpace], f: Callable, pmap: bool = False):
         super().__init__(domain, f)
+        self.pmap = pmap
 
-    def optimise(
+    def search(
         self,
         n_iterations: int = -1,
         n_parallel: int = 10,
-        pmap: bool = False,
     ):
         # Select the portion of the grid we want to evaluate
         if n_iterations == -1:
@@ -28,7 +27,7 @@ class GridSearch(BaseOptimiser):
         else:
             domain = self.domain[:n_iterations]
 
-        if pmap:
+        if self.pmap:
             n_devices = jax.device_count()
             map_f = jax.pmap(self.f, in_axes=(0,) * domain.shape[1])
             logger.warning(
@@ -60,20 +59,35 @@ class GridSearch(BaseOptimiser):
             batch_results = map_f(*batch.T)
             return start_idx + n_parallel, batch_results
 
-        # Scan over all batches
+        # Scan over all batches of parameters
         _, batch_results = jax.lax.scan(_inner_loop, 0, None, length=n_batches)
 
         # Flatten and truncate the padded tail (if any)
         results = jnp.concatenate(batch_results, axis=0)[:n_iterations]
 
+        return results
+
+    def optimise(
+        self,
+        n_iterations: int = -1,
+        n_parallel: int = 10,
+        jit: bool = False,
+        maximise: bool = True,
+    ):
+        if jit:
+            results = jax.jit(self.search, static_argnums=(0, 1))(
+                n_iterations, n_parallel
+            )
+        else:
+            results = self.search(n_iterations, n_parallel)
         # Identify (potentially multiple) maxima
-        max_idxs = jnp.where(results == results.max())[0]
+        if maximise:
+            max_idxs = jnp.where(results == results.max())[0]
+        else:
+            max_idxs = jnp.where(results == results.min())[0]
         # save the results for later use
         self.results = results
-        return domain[max_idxs]
-
-    # TODO: handle multiple maxima properly
-    # TODO: add support for minimisation
+        return self.domain[max_idxs].flatten()
 
 
 class RandomSearch(GridSearch):

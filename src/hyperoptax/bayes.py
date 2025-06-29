@@ -21,43 +21,73 @@ class BayesOptimiser(BaseOptimiser):
         super().__init__(domain, f)
         self.kernel = kernel
         self.aquisition = aquisition
-        self.jitter = 1e-12
+        self.jitter = 1e-6
 
-    def optimise(
+    def search(
         self,
         n_iterations: int = -1,
         n_parallel: int = 10,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
-        # at iter 1: randomly sample n_parallel points
-        # fit GP
-        # aquire next point
-        # fill sample with worse result
-        # iteratte n_parallel times
-        # iterate until n_iterations
-        # sample n_parallel points from domain
+
         map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
-        seen_idx = jax.random.choice(
+        idx = jax.random.choice(
             key,
             jnp.arange(len(self.domain)),
             (n_parallel,),
         )
-        X_seen = self.domain[seen_idx]
-        y_seen = map_f(*X_seen.T)
+        # Because jax.lax.fori_loop doesn't support dynamic slicing and sizes,
+        # we abuse the fact that GPs can handle duplicate points,
+        # we can therefore create the array and dynamically replace the values during the loop.
+        X_seen = jnp.zeros((n_iterations, self.domain.shape[1]))
+        X_seen = X_seen.at[:n_parallel].set(self.domain[idx])
+        X_seen = X_seen.at[n_parallel:].set(self.domain[idx[0]])
+        results = map_f(*X_seen[:n_parallel].T)
 
-        for i in range(n_iterations - n_parallel):
-            # fit GP
-            mean, covariance = self.fit_gp(X_seen, y_seen)
-            candidate_idx = self.aquisition.get_argmax(
-                mean, jnp.sqrt(jnp.diag(covariance)), seen_idx
-            )
+        y_seen = jnp.zeros(n_iterations)
+        y_seen = y_seen.at[:n_parallel].set(results)
+        y_seen = y_seen.at[n_parallel:].set(results[0])
+
+        seen_idx = jnp.zeros(n_iterations)
+        seen_idx = seen_idx.at[:n_parallel].set(idx)
+        seen_idx = seen_idx.at[n_parallel:].set(idx[0])
+
+        def _inner_loop(i, carry):
+            X_seen, y_seen, seen_idx = carry
+
+            mean, std = self.fit_gp(X_seen, y_seen)
+            candidate_idx = self.aquisition.get_argmax(mean, std, seen_idx)
+
             candidate_point = self.domain[candidate_idx]
             result = self.f(*candidate_point)
-            y_seen = jnp.concatenate([y_seen, result.reshape(1)])
-            X_seen = jnp.concatenate([X_seen, candidate_point.reshape(1, -1)])
-            seen_idx = jnp.concatenate([seen_idx, candidate_idx.reshape(1)])
+            X_seen = X_seen.at[n_parallel + i].set(candidate_point)
+            y_seen = y_seen.at[n_parallel + i].set(result)
+            seen_idx = seen_idx.at[n_parallel + i].set(candidate_idx)
+            
+            return X_seen, y_seen, seen_idx
+        # TODO: fix the bug where points are being evaluated multiple times
+        (X_seen, y_seen, seen_idx) = jax.lax.fori_loop(
+            n_parallel, n_iterations, _inner_loop, (X_seen, y_seen, seen_idx)
+        )
+        return X_seen, y_seen
 
-        max_idx = jnp.where(y_seen == y_seen.max())
+    def optimise(
+        self,
+        n_iterations: int,
+        n_parallel: int,
+        jit: bool = False,
+        maximise: bool = True,
+    ):
+        if jit:
+            X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
+                n_iterations, n_parallel
+            )
+        else:
+            X_seen, y_seen = self.search(n_iterations, n_parallel)
+        if maximise:
+            max_idx = jnp.where(y_seen == y_seen.max())
+        else:
+            max_idx = jnp.where(y_seen == y_seen.min())
         return X_seen[max_idx]
 
     def fit_gp(self, X: jax.Array, y: jax.Array):
@@ -76,4 +106,3 @@ class BayesOptimiser(BaseOptimiser):
         y_var -= jnp.einsum("ij,ji->i", V.T, V)
 
         return y_mean, jnp.sqrt(jnp.abs(y_var))
-    
