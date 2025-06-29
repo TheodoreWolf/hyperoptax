@@ -29,7 +29,6 @@ class BayesOptimiser(BaseOptimiser):
         n_parallel: int = 10,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
-
         map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
         idx = jax.random.choice(
             key,
@@ -56,18 +55,30 @@ class BayesOptimiser(BaseOptimiser):
             X_seen, y_seen, seen_idx = carry
 
             mean, std = self.fit_gp(X_seen, y_seen)
-            candidate_idx = self.aquisition.get_argmax(mean, std, seen_idx)
+            candidate_idxs = self.aquisition.get_argmax(
+                mean, std, seen_idx, n_points=n_parallel
+            )
 
-            candidate_point = self.domain[candidate_idx]
-            result = self.f(*candidate_point)
-            X_seen = X_seen.at[n_parallel + i].set(candidate_point)
-            y_seen = y_seen.at[n_parallel + i].set(result)
-            seen_idx = seen_idx.at[n_parallel + i].set(candidate_idx)
-            
+            candidate_points = self.domain[candidate_idxs]
+            results = map_f(*candidate_points.T)
+            X_seen = jax.lax.dynamic_update_slice(
+                X_seen, candidate_points, (n_parallel + i * n_parallel, 0)
+            )
+
+            y_seen = jax.lax.dynamic_update_slice(
+                y_seen, results, (n_parallel + i * n_parallel,)
+            )
+            seen_idx = jax.lax.dynamic_update_slice(
+                seen_idx,
+                candidate_idxs.astype(jnp.float32),
+                (n_parallel + i * n_parallel,),
+            )
+
             return X_seen, y_seen, seen_idx
+
         # TODO: fix the bug where points are being evaluated multiple times
         (X_seen, y_seen, seen_idx) = jax.lax.fori_loop(
-            n_parallel, n_iterations, _inner_loop, (X_seen, y_seen, seen_idx)
+            0, n_iterations // n_parallel, _inner_loop, (X_seen, y_seen, seen_idx)
         )
         return X_seen, y_seen
 

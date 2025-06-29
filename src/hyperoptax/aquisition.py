@@ -22,7 +22,9 @@ class UCB(BaseAquisition):
     def __call__(self, mean: jax.Array, std: jax.Array):
         return mean + self.kappa * std
 
-    def get_argmax(self, mean: jax.Array, std: jax.Array, seen_idx: jax.Array):
+    def get_argmax(
+        self, mean: jax.Array, std: jax.Array, seen_idx: jax.Array, n_points: int = 1
+    ):
         """Return the index that maximises the acquisition value while
         excluding indices present in *seen_idx*.
 
@@ -42,7 +44,7 @@ class UCB(BaseAquisition):
         # Replace acquisition values of seen points with -inf so they are never selected.
         masked_acq = jnp.where(seen_mask, -jnp.inf, acq_vals)
 
-        return jnp.argmax(masked_acq)
+        return jnp.argsort(masked_acq,)[-n_points:]
 
     def get_max(
         self, mean: jax.Array, std: jax.Array, X: jax.Array, seen_idx: jax.Array
