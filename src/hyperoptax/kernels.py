@@ -22,3 +22,6 @@ class RBF(BaseKernel):
 
     def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
         return jnp.exp(-(cdist(x, y) ** 2) / (2 * self.length_scale**2))
+
+    def diag(self, x: jax.Array) -> jax.Array:
+        return jnp.ones(x.shape[0]) * self.length_scale**2

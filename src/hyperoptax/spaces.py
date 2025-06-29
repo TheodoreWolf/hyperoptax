@@ -1,5 +1,3 @@
-from typing import Optional
-
 from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
@@ -7,9 +5,9 @@ import jax.numpy as jnp
 
 @dataclass
 class BaseSpace:
-    start: Optional[float | int] = None
-    end: Optional[float | int] = None
-    n_points: Optional[float | int] = None
+    start: float | int
+    end: float | int
+    n_points: float | int
 
     def __len__(self) -> int:
         return self.n_points
@@ -26,8 +24,8 @@ class BaseSpace:
 
 
 @dataclass
-class ArbitrarySpace(BaseSpace):
-    values: Optional[list[int | float]] = None
+class ArbitrarySpace:
+    values: list[int | float]
     name: str = "arbitrary_space"
 
     def __post_init__(self):
@@ -57,6 +55,12 @@ class LinearSpace(BaseSpace):
 class LogSpace(BaseSpace):
     log_base: float | int = 10
     name: str = "log_space"
+
+    def __post_init__(self):
+        # JAX silently converts negative numbers to nan
+        assert self.start > 0 and self.end > 0 and self.log_base > 0, (
+            "Log space must be positive and have a positive log base."
+        )
 
     @property
     def array(self) -> jax.Array:

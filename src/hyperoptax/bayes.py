@@ -2,6 +2,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
+import jax.scipy as jsp
 
 from hyperoptax.base import BaseOptimiser
 from hyperoptax.kernels import BaseKernel, RBF
@@ -20,6 +21,7 @@ class BayesOptimiser(BaseOptimiser):
         super().__init__(domain, f)
         self.kernel = kernel
         self.aquisition = aquisition
+        self.jitter = 1e-12
 
     def optimise(
         self,
@@ -62,14 +64,16 @@ class BayesOptimiser(BaseOptimiser):
         X_test = self.domain
 
         # we calculated our posterior distribution conditioned on data
-        K = self.kernel(X_test, X_test)
-        Kxx = self.kernel(X, X)
-        Kx = self.kernel(X_test, X)
-        Kxx_inv = jnp.linalg.pinv(Kxx)
+        K = self.kernel(X, X)
+        K = K + jnp.eye(K.shape[0]) * self.jitter
+        L = jsp.linalg.cholesky(K, lower=True)
+        w = jsp.linalg.cho_solve((L, True), y)
 
-        # mean and cov of conditioned GP
-        mean = Kx @ Kxx_inv @ y
-        # do we need the full covariance matrix?
-        covariance = K - Kx @ Kxx_inv @ Kx.T
+        K_trans = self.kernel(X_test, X)
+        y_mean = K_trans @ w
+        V = jsp.linalg.solve_triangular(L, K_trans.T, lower=True)
+        y_var = self.kernel.diag(X_test)
+        y_var -= jnp.einsum("ij,ji->i", V.T, V)
 
-        return mean, covariance
+        return y_mean, jnp.sqrt(jnp.abs(y_var))
+    
