@@ -1,10 +1,8 @@
 import logging
-import inspect
 from typing import Callable
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from hyperoptax.base import BaseOptimiser
 from hyperoptax.spaces import BaseSpace
@@ -16,15 +14,6 @@ class GridSearch(BaseOptimiser):
     # TODO: dicts are not ordered, we might have some parameters that get swapped
     def __init__(self, domain: dict[str, BaseSpace], f: Callable):
         super().__init__(domain, f)
-
-        n_args = len(inspect.signature(f).parameters)
-        n_points = np.prod([len(domain[k]) for k in domain])
-        assert n_args == len(domain), (
-            f"Function must have the same number of arguments as the domain, "
-            f"got {n_args} arguments and {len(domain)} domains."
-        )
-        grid = jnp.array(jnp.meshgrid(*[space.array for space in domain.values()]))
-        self.domain = grid.reshape(n_args, n_points).T
 
     def optimise(
         self,
