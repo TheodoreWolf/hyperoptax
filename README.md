@@ -40,6 +40,12 @@ best_params = search.optimise(n_iterations=100,
                               maximise=False
                               )
 ```
+## The Sharp Bits
+
+Since we are working in pure JAX the same [sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html) apply. Addtionally, hyperoptax has some extra sharp bits:
+1. Parameters that change the length of an evaluation (e.g: epochs, generations...) can't be optimised
+2. Neural network structures can't be optimised either.
+3. Strings can NOT be used as hyperparameters.
 
 ## Contributing
 

@@ -35,3 +35,5 @@ class BaseOptimiser(ABC):
     @abstractmethod
     def search(self, n_iterations: int, n_parallel: int):
         raise NotImplementedError
+
+# TODO: add progress bar https://www.jeremiecoullon.com/2021/01/29/jax_progress_bar/

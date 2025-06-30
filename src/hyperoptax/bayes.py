@@ -82,6 +82,7 @@ class BayesOptimiser(BaseOptimiser):
         )
         return X_seen, y_seen
 
+    # TODO: ensure that -1 is handled correctly
     def optimise(
         self,
         n_iterations: int,
