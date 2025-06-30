@@ -5,7 +5,7 @@
 
 ## Introduction
 
-Hyperoptax is a lightweight toolbox for hyper-parameter optimisation of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces – all while staying in pure JAX.
+Hyperoptax is a lightweight toolbox for hyperparameter optimisation of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces – all while staying in pure JAX.
 
 ## Installation
 
@@ -73,7 +73,7 @@ python -m unittest discover -s tests
 If you use Hyperoptax in academic work, please cite:
 
 ```bibtex
-@misc{hyperoptax2024,
+@misc{hyperoptax, hyperparameter tuning in pure JAX,
   author       = {Theo Wolf},
   title        = {{Hyperoptax}: Hyperparameter tuning for pure JAX functions},
   year         = {2025},
