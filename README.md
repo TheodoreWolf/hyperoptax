@@ -5,11 +5,11 @@
 [![PyPI version](https://img.shields.io/pypi/v/hyperoptax)](https://pypi.org/project/hyperoptax)
 ![CI status](https://github.com/TheodoreWolf/hyperoptax/actions/workflows/test.yml/badge.svg?branch=main)
 
-## Introduction
+## ⛰️ Introduction
 
 Hyperoptax is a lightweight toolbox for parallel hyperparameter optimisation of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces __in parallel__  – all while staying in pure JAX. 
 
-## Installation
+## 🏗️ Installation
 
 ```bash
 pip install hyperoptax
@@ -27,7 +27,7 @@ If you do not yet have JAX installed, pick the right wheel for your accelerator:
 pip install --upgrade "jax[cpu]"
 # or GPU/TPU – see the official JAX installation guide
 ```
-## In a nutshell
+## 🥜 In a nutshell
 Hyperoptax offers a simple API to wrap pure JAX functions for hyperparameter search and making use of parallelisation (vmap or pmap). See the [notebooks](https://github.com/TheodoreWolf/hyperoptax/tree/main/notebooks) for more examples.
 ```python
 from hyperoptax.bayes import BayesOptimiser
@@ -48,14 +48,14 @@ best_params = search.optimise(n_iterations=100,
                               pmap=True
                               )
 ```
-## The Sharp Bits
+## 🔪 The Sharp Bits
 
 Since we are working in pure JAX the same [sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html) apply. Some consequences of this for hyperoptax:
 1. Parameters that change the length of an evaluation (e.g: epochs, generations...) can't be optimised in parallel.
 2. Neural network structures can't be optimised in parallel either.
 3. Strings can't be used as hyperparameters.
 
-## Contributing
+## 🫂 Contributing
 
 We welcome pull requests! To get started:
 
@@ -76,7 +76,7 @@ python -m unittest discover -s tests
 5. Format your code with `ruff`.
 6. Submit a pull request.
 
-## Citation
+## 📝 Citation
 
 If you use Hyperoptax in academic work, please cite:
 
