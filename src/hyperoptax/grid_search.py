@@ -3,6 +3,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
+from jax_tqdm import scan_tqdm
 
 from hyperoptax.base import BaseOptimiser
 from hyperoptax.spaces import BaseSpace
@@ -31,6 +32,7 @@ class GridSearch(BaseOptimiser):
 
         n_dims = domain.shape[1]  # static – number of arguments of f
 
+        @scan_tqdm(n_batches)
         def _inner_loop(start_idx, _):
             """Evaluate a single batch starting at ``start_idx``."""
             # Ensure we stay within bounds. The clamp keeps the slice valid even
@@ -47,12 +49,18 @@ class GridSearch(BaseOptimiser):
             return start_idx + n_parallel, batch_results
 
         # Scan over all batches of parameters
-        _, batch_results = jax.lax.scan(_inner_loop, 0, None, length=n_batches)
+        _, batch_results = jax.lax.scan(
+            _inner_loop, 0, jnp.arange(n_batches), length=n_batches
+        )
 
         # Flatten and truncate the padded tail (if any)
         results = jnp.concatenate(batch_results, axis=0)[:n_iterations]
 
         return results
+
+    # TODO: add support for saving results
+    # TODO: api can remove p/vmap if we want to optimise epochs/nn architectures
+    # TODO: add wandb logging
 
     def optimise(
         self,

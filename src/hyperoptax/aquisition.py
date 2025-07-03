@@ -22,6 +22,7 @@ class UCB(BaseAquisition):
     def __call__(self, mean: jax.Array, std: jax.Array):
         return mean + self.kappa * std
 
+    # TODO: add functionality for a strategy to select the next point to evaluate
     def get_argmax(
         self, mean: jax.Array, std: jax.Array, seen_idx: jax.Array, n_points: int = 1
     ):

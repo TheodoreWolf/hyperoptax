@@ -7,7 +7,6 @@ import jax
 import jax.numpy as jnp
 
 
-# TODO: make sure dictionary is ordered
 class BaseOptimiser(ABC):
     def __init__(self, domain: dict[str, jax.Array], f: Callable):
         self.f = f
@@ -35,5 +34,3 @@ class BaseOptimiser(ABC):
     @abstractmethod
     def search(self, n_iterations: int, n_parallel: int):
         raise NotImplementedError
-
-# TODO: add progress bar https://www.jeremiecoullon.com/2021/01/29/jax_progress_bar/

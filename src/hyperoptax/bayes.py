@@ -3,9 +3,10 @@ import logging
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
+from jax_tqdm import loop_tqdm
 
 from hyperoptax.base import BaseOptimiser
-from hyperoptax.kernels import BaseKernel, RBF
+from hyperoptax.kernels import BaseKernel, Matern
 from hyperoptax.spaces import BaseSpace
 from hyperoptax.aquisition import BaseAquisition, UCB
 
@@ -17,13 +18,14 @@ class BayesOptimiser(BaseOptimiser):
         self,
         domain: dict[str, BaseSpace],
         f: Callable,
-        kernel: BaseKernel = RBF(length_scale=1.0),
+        kernel: BaseKernel = Matern(length_scale=1.0, nu=2.5),
         aquisition: BaseAquisition = UCB(kappa=2.0),
+        jitter: float = 1e-6,
     ):
         super().__init__(domain, f)
         self.kernel = kernel
         self.aquisition = aquisition
-        self.jitter = 1e-6
+        self.jitter = jitter  # has to be quite high to avoid numerical issues
 
     def search(
         self,
@@ -52,6 +54,7 @@ class BayesOptimiser(BaseOptimiser):
         seen_idx = seen_idx.at[:n_parallel].set(idx)
         seen_idx = seen_idx.at[n_parallel:].set(idx[0])
 
+        @loop_tqdm(n_iterations // n_parallel)
         def _inner_loop(i, carry):
             X_seen, y_seen, seen_idx = carry
 

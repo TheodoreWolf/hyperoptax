@@ -33,7 +33,7 @@ class TestBayes(unittest.TestCase):
         bayes = BayesOptimiser(domain, f)
         result = bayes.optimise(n_iterations=100, n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0.0, 0.0, 0.0, 0.0])))
-    
+
     def test_bayes_optimiser_jit(self):
         def f(x, y, z, w):
             return -(x**2) - (y**2) - (z**2) - (w**2)

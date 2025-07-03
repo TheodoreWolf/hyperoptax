@@ -26,7 +26,7 @@ class TestUCB(unittest.TestCase):
 
         max_val = ucb.get_max(mean, std, X, seen_idx)
         self.assertTrue(jnp.allclose(max_val, jnp.array([0.0, 0.0])))
-    
+
     def test_get_argmax_jitted(self):
         ucb = UCB(kappa=2.0)
         mean = jnp.array([1.0, 0.0, 0.0])
