@@ -77,7 +77,7 @@ class GridSearch(BaseOptimizer):
         n_iterations: int = -1,
         n_parallel: int = 10,
         jit: bool = False,
-        maximise: bool = True,
+        maximize: bool = True,
         pmap: bool = False,
         save_results: bool = True,
     ):
@@ -105,7 +105,7 @@ class GridSearch(BaseOptimizer):
         if save_results:
             self.results = self.domain[:n_iterations], results
         # Identify (potentially multiple) maxima
-        if maximise:
+        if maximize:
             max_idxs = jnp.where(results == results.max())[0]
         else:
             max_idxs = jnp.where(results == results.min())[0]

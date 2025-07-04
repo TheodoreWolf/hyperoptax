@@ -26,7 +26,7 @@ class UCB(BaseAquisition):
     def get_argmax(
         self, mean: jax.Array, std: jax.Array, seen_idx: jax.Array, n_points: int = 1
     ):
-        """Return the index that maximises the acquisition value while
+        """Return the index that maximizes the acquisition value while
         excluding indices present in *seen_idx*.
 
         The implementation avoids dynamic boolean indexing (which is not

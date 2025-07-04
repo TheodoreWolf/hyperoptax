@@ -59,6 +59,7 @@ class BayesianOptimizer(BaseOptimizer):
             X_seen, y_seen, seen_idx = carry
 
             mean, std = self.fit_gp(X_seen, y_seen)
+            # can potentially sample points that are very close to each other
             candidate_idxs = self.aquisition.get_argmax(
                 mean, std, seen_idx, n_points=n_parallel
             )
@@ -86,12 +87,13 @@ class BayesianOptimizer(BaseOptimizer):
         return X_seen, y_seen
 
     # TODO: ensure that -1 is handled correctly
+    # TODO: minimize is fake news
     def optimize(
         self,
         n_iterations: int,
         n_parallel: int,
         jit: bool = False,
-        maximise: bool = True,
+        maximize: bool = True,
         pmap: bool = False,
         save_results: bool = True,
     ):
@@ -119,7 +121,7 @@ class BayesianOptimizer(BaseOptimizer):
             X_seen, y_seen = self.search(n_iterations, n_parallel)
         if save_results:
             self.results = X_seen, y_seen
-        if maximise:
+        if maximize:
             max_idx = jnp.where(y_seen == y_seen.max())
         else:
             max_idx = jnp.where(y_seen == y_seen.min())
@@ -143,4 +145,12 @@ class BayesianOptimizer(BaseOptimizer):
         # https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/gaussian_process/_gpr.py#L475
         y_var -= jnp.einsum("ij,ji->i", V.T, V)
 
-        return y_mean, jnp.sqrt(jnp.abs(y_var))
+        # TODO: clip to 0
+        return y_mean, jnp.sqrt(y_var)
+    
+    # TODO: not used yet
+    def sanitize_and_normalize(self, y_seen: jax.Array):
+        # TODO: remove nans and infs and replace with... something?
+        y_seen = y_seen.at[jnp.isnan(y_seen)].set(jnp.nan)
+        y_seen = (y_seen - y_seen.mean()) / (y_seen.std() + 1e-10)
+        return y_seen

@@ -91,15 +91,15 @@ class ExpSpace(LogSpace):
 
 
 @dataclass
-class QuantisedLinearSpace:
+class QuantizedLinearSpace:
     start: int | float
     end: int | float
-    quantisation_factor: int | float
-    name: str = "quantised_space"
+    quantization_factor: int | float
+    name: str = "quantized_space"
 
     def __post_init__(self):
         self.n_points = jnp.int32(
-            (self.end - self.start) / self.quantisation_factor + 1
+            (self.end - self.start) / self.quantization_factor + 1
         )
 
     @property
@@ -107,9 +107,9 @@ class QuantisedLinearSpace:
         return jnp.linspace(self.start, self.end, self.n_points)
 
 
-# class QuantisedLogSpace(QuantisedLinearSpace):
+# class QuantizedLogSpace(QuantizedLinearSpace):
 #     base: float | int = 10
-#     name: str = "quantised_log_space"
+#     name: str = "quantized_log_space"
 
 #     @property
 #     def array(self) -> jax.Array:

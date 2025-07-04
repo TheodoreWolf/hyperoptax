@@ -47,16 +47,16 @@ class TestExpSpace(unittest.TestCase):
         self.assertTrue(jnp.allclose(space.array, expected))
 
 
-class TestQuantisedLinearSpace(unittest.TestCase):
+class TestQuantizedLinearSpace(unittest.TestCase):
     def test_array(self):
-        space = sp.QuantisedLinearSpace(0, 1, 0.1)
+        space = sp.QuantizedLinearSpace(0, 1, 0.1)
         expected = jnp.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         self.assertTrue(jnp.allclose(space.array, expected))
 
 
 # need to figure out what the best test is
-# class TestQuantisedLogSpace(unittest.TestCase):
+# class TestQuantizedLogSpace(unittest.TestCase):
 #     def test_array(self):
-#         space = sp.QuantisedLogSpace(32, 256, 2)
+#         space = sp.QuantizedLogSpace(32, 256, 2)
 #         expected = jnp.array([32, 64, 128, 256])
 #         self.assertTrue(jnp.allclose(space.array, expected))

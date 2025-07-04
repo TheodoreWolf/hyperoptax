@@ -7,7 +7,7 @@ from hyperoptax.spaces import LinearSpace, LogSpace
 
 
 class TestBayes(unittest.TestCase):
-    def test_bayes_optimiser(self):
+    def test_bayes_optimizer(self):
         def f(x, y):
             return x**2 - y**2
 
@@ -19,7 +19,7 @@ class TestBayes(unittest.TestCase):
         result = bayes.optimize(n_iterations=100, n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0.01, 0.01])))
 
-    def test_bayes_optimiser_improve_in_high_dim(self):
+    def test_bayes_optimizer_improve_in_high_dim(self):
         # make function where optimum is in the center of high dimensional domain
         def f(x, y, z, w):
             return -(x**2) - (y**2) - (z**2) - (w**2)
@@ -34,7 +34,7 @@ class TestBayes(unittest.TestCase):
         result = bayes.optimize(n_iterations=100, n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0.0, 0.0, 0.0, 0.0])))
 
-    def test_bayes_optimiser_jit(self):
+    def test_bayes_optimizer_jit(self):
         def f(x, y, z, w):
             return -(x**2) - (y**2) - (z**2) - (w**2)
 

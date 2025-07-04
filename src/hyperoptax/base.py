@@ -40,7 +40,7 @@ class BaseOptimizer(ABC):
         n_iterations: int,
         n_parallel: int,
         jit: bool = False,
-        maximise: bool = True,
+        maximize: bool = True,
         pmap: bool = False,
         save_results: bool = False,
     ):

@@ -42,9 +42,9 @@ search_space = {"learning_rate": LogSpace(1e-5,1e-1, 100),
                 "final_lr_pct": LinearSpace(0.01, 0.5, 100)}
 
 search = BayesianOptimizer(search_space, train_nn)
-best_params = search.optimise(n_iterations=100, 
+best_params = search.optimize(n_iterations=100, 
                               n_parallel=10, 
-                              maximise=False,
+                              maximize=False,
                               )
 ```
 ## 🔪 The Sharp Bits
@@ -82,6 +82,8 @@ I'm developing this both as a passion project and for my work in my PhD. I have 
 - Callbacks!
 - Inspired by wandb's sweeps, use a linear grid for all parameters and apply transformations at sample time.
 - We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
+- Documentation!
+- pmap is broken: need to shard the domain for grid. For bayesian, I'll need to have the GP be shared across gpus.
 
 ## 📝 Citation
 
