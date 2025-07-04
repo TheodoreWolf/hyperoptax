@@ -10,8 +10,9 @@ def test_import_hyperoptax():
 
 def test_import_modules():
     """Test that all modules can be imported."""
-    from hyperoptax import grid_search, spaces, base
+    from hyperoptax import grid, spaces, base, bayesian
 
-    assert grid_search is not None
+    assert grid is not None
     assert spaces is not None
     assert base is not None
+    assert bayesian is not None

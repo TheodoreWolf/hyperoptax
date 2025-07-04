@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from jax_tqdm import loop_tqdm
 
-from hyperoptax.base import BaseOptimiser
+from hyperoptax.base import BaseOptimizer
 from hyperoptax.kernels import BaseKernel, Matern
 from hyperoptax.spaces import BaseSpace
 from hyperoptax.aquisition import BaseAquisition, UCB
@@ -13,7 +13,7 @@ from hyperoptax.aquisition import BaseAquisition, UCB
 logger = logging.getLogger(__name__)
 
 
-class BayesOptimiser(BaseOptimiser):
+class BayesianOptimizer(BaseOptimizer):
     def __init__(
         self,
         domain: dict[str, BaseSpace],
@@ -86,27 +86,29 @@ class BayesOptimiser(BaseOptimiser):
         return X_seen, y_seen
 
     # TODO: ensure that -1 is handled correctly
-    def optimise(
+    def optimize(
         self,
         n_iterations: int,
         n_parallel: int,
         jit: bool = False,
         maximise: bool = True,
         pmap: bool = False,
-        save_results: bool = False,
+        save_results: bool = True,
     ):
-        if pmap:
-            n_devices = jax.device_count()
-            self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
-            if n_devices != n_parallel:
-                logger.warning(
-                    f"Using pmap with {n_devices} devices, "
-                    f"but {n_parallel} parallel evaluations was requested."
-                    f"Overriding n_parallel from {n_parallel} to {n_devices}."
-                )
-                n_parallel = n_devices
-        else:
-            self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
+        # TODO: pmap is not supported yet: can't use jax.pmap in the search function
+        logger.warning("pmap is not supported yet: defaulting to vmap instead")
+        # if pmap:
+        #     n_devices = jax.device_count()
+        #     self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
+        #     if n_devices != n_parallel:
+        #         logger.warning(
+        #             f"Using pmap with {n_devices} devices, "
+        #             f"but {n_parallel} parallel evaluations was requested."
+        #             f"Overriding n_parallel from {n_parallel} to {n_devices}."
+        #         )
+        #         n_parallel = n_devices
+        # else:
+        self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
 
         if jit:
             X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
@@ -120,6 +122,7 @@ class BayesOptimiser(BaseOptimiser):
             max_idx = jnp.where(y_seen == y_seen.max())
         else:
             max_idx = jnp.where(y_seen == y_seen.min())
+
         return X_seen[max_idx].flatten()
 
     def fit_gp(self, X: jax.Array, y: jax.Array):

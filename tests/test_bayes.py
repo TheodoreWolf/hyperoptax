@@ -2,7 +2,7 @@ import unittest
 
 import jax.numpy as jnp
 
-from hyperoptax.bayes import BayesOptimiser
+from hyperoptax.bayesian import BayesianOptimizer
 from hyperoptax.spaces import LinearSpace, LogSpace
 
 
@@ -15,8 +15,8 @@ class TestBayes(unittest.TestCase):
             "x": LogSpace(1e-4, 1e-2, 10),
             "y": LinearSpace(0.01, 0.99, 10),
         }
-        bayes = BayesOptimiser(domain, f)
-        result = bayes.optimise(n_iterations=100, n_parallel=10)
+        bayes = BayesianOptimizer(domain, f)
+        result = bayes.optimize(n_iterations=100, n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0.01, 0.01])))
 
     def test_bayes_optimiser_improve_in_high_dim(self):
@@ -30,8 +30,8 @@ class TestBayes(unittest.TestCase):
             "z": LinearSpace(-1, 1, 11),
             "w": LinearSpace(-1, 1, 11),
         }
-        bayes = BayesOptimiser(domain, f)
-        result = bayes.optimise(n_iterations=100, n_parallel=10)
+        bayes = BayesianOptimizer(domain, f)
+        result = bayes.optimize(n_iterations=100, n_parallel=10)
         self.assertTrue(jnp.allclose(result, jnp.array([0.0, 0.0, 0.0, 0.0])))
 
     def test_bayes_optimiser_jit(self):
@@ -44,6 +44,6 @@ class TestBayes(unittest.TestCase):
             "z": LinearSpace(-1, 1, 11),
             "w": LinearSpace(-1, 1, 11),
         }
-        bayes = BayesOptimiser(domain, f)
-        result = bayes.optimise(n_iterations=100, n_parallel=10, jit=True)
+        bayes = BayesianOptimizer(domain, f)
+        result = bayes.optimize(n_iterations=100, n_parallel=10, jit=True)
         self.assertTrue(jnp.allclose(result, jnp.array([0.0, 0.0, 0.0, 0.0])))

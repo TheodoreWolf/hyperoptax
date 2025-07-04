@@ -5,20 +5,31 @@ import jax
 import jax.numpy as jnp
 from jax_tqdm import scan_tqdm
 
-from hyperoptax.base import BaseOptimiser
+from hyperoptax.base import BaseOptimizer
 from hyperoptax.spaces import BaseSpace
 
 logger = logging.getLogger(__name__)
 
 
-class GridSearch(BaseOptimiser):
-    def __init__(self, domain: dict[str, BaseSpace], f: Callable, pmap: bool = False):
+class GridSearch(BaseOptimizer):
+    def __init__(
+        self,
+        domain: dict[str, BaseSpace],
+        f: Callable,
+        random_search: bool = False,
+        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+    ):
         super().__init__(domain, f)
+        if random_search:
+            idxs = jax.random.choice(
+                key, self.domain.shape[0], (self.domain.shape[0],), replace=False
+            )
+            self.domain = self.domain[idxs]
 
     def search(
         self,
-        n_iterations: int = -1,
-        n_parallel: int = 10,
+        n_iterations: int,
+        n_parallel: int,
     ):
         # Select the portion of the grid we want to evaluate
         if n_iterations == -1:
@@ -58,30 +69,33 @@ class GridSearch(BaseOptimiser):
 
         return results
 
-    # TODO: add support for saving results
-    # TODO: api can remove p/vmap if we want to optimise epochs/nn architectures
     # TODO: add wandb logging
+    # TODO: add support for keys
 
-    def optimise(
+    def optimize(
         self,
         n_iterations: int = -1,
         n_parallel: int = 10,
         jit: bool = False,
         maximise: bool = True,
         pmap: bool = False,
-        save_results: bool = False,
+        save_results: bool = True,
     ):
+        # TODO: pmap is not supported yet: can't use jax.pmap in the search function
+        # have to shard the domain into n_parallel chunks
         if pmap:
-            n_devices = jax.device_count()
-            self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
-            logger.warning(
-                f"Using pmap with {n_devices} devices, "
-                f"but {n_parallel} parallel evaluations was requested."
-                f"Overriding n_parallel from {n_parallel} to {n_devices}."
-            )
-            n_parallel = n_devices
-        else:
-            self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
+            logger.warning("pmap is not supported yet: defaulting to vmap instead")
+        # if pmap:
+        #     n_devices = jax.device_count()
+        #     self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
+        #     logger.warning(
+        #         f"Using pmap with {n_devices} devices, "
+        #         f"but {n_parallel} parallel evaluations was requested."
+        #         f"Overriding n_parallel from {n_parallel} to {n_devices}."
+        #     )
+        #     n_parallel = n_devices
+        # else:
+        self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
         if jit:
             results = jax.jit(self.search, static_argnums=(0, 1))(
                 n_iterations, n_parallel
@@ -89,24 +103,10 @@ class GridSearch(BaseOptimiser):
         else:
             results = self.search(n_iterations, n_parallel)
         if save_results:
-            self.results = results
+            self.results = self.domain[:n_iterations], results
         # Identify (potentially multiple) maxima
         if maximise:
             max_idxs = jnp.where(results == results.max())[0]
         else:
             max_idxs = jnp.where(results == results.min())[0]
         return self.domain[max_idxs].flatten()
-
-
-class RandomSearch(GridSearch):
-    def __init__(
-        self,
-        domain: dict[str, BaseSpace],
-        f: Callable,
-        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-    ):
-        super().__init__(domain, f)
-        idxs = jax.random.choice(
-            key, self.domain.shape[0], (self.domain.shape[0],), replace=False
-        )
-        self.domain = self.domain[idxs]
