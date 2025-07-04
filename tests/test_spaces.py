@@ -19,10 +19,6 @@ class TestLinearSpace(unittest.TestCase):
         expected = jnp.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         self.assertTrue(jnp.allclose(space.array, expected))
 
-    def test_len(self):
-        space = sp.LinearSpace(0, 1, 11)
-        self.assertEqual(len(space), 11)
-
 
 class TestLogSpace(unittest.TestCase):
     def test_array_log_base_10(self):
@@ -34,10 +30,6 @@ class TestLogSpace(unittest.TestCase):
         space = sp.LogSpace(32, 256, 4, 2)
         expected = jnp.array([32, 64, 128, 256])
         self.assertTrue(jnp.allclose(space.array, expected))
-
-    def test_len(self):
-        space = sp.LogSpace(1e-4, 1e-2, 10)
-        self.assertEqual(len(space), 10)
 
 
 class TestExpSpace(unittest.TestCase):

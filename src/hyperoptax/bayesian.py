@@ -23,16 +23,26 @@ class BayesianOptimizer(BaseOptimizer):
         jitter: float = 1e-6,
     ):
         super().__init__(domain, f)
+
         self.kernel = kernel
         self.aquisition = aquisition
         self.jitter = jitter  # has to be quite high to avoid numerical issues
 
     def search(
         self,
-        n_iterations: int = -1,
-        n_parallel: int = 10,
+        n_iterations: int,
+        n_parallel: int,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-    ):
+    ) -> tuple[jax.Array, jax.Array]:
+        if n_iterations >= self.domain.shape[0]:
+            logger.warning(
+                f"n_iterations={n_iterations} is greater or equal to the number of "
+                f"points in the domain={self.domain.shape[0]},"
+                "this will result in a full grid search."
+            )
+        # Number of batches we need to cover all requested iterations
+        n_batches = (n_iterations + n_parallel - 1) // n_parallel
+        n_batches -= 1  # because we do the first batch separately
         idx = jax.random.choice(
             key,
             jnp.arange(len(self.domain)),
@@ -54,7 +64,7 @@ class BayesianOptimizer(BaseOptimizer):
         seen_idx = seen_idx.at[:n_parallel].set(idx)
         seen_idx = seen_idx.at[n_parallel:].set(idx[0])
 
-        @loop_tqdm(n_iterations // n_parallel)
+        @loop_tqdm(n_batches)
         def _inner_loop(i, carry):
             X_seen, y_seen, seen_idx = carry
 
@@ -82,53 +92,11 @@ class BayesianOptimizer(BaseOptimizer):
             return X_seen, y_seen, seen_idx
 
         (X_seen, y_seen, seen_idx) = jax.lax.fori_loop(
-            0, n_iterations // n_parallel, _inner_loop, (X_seen, y_seen, seen_idx)
+            0, n_batches, _inner_loop, (X_seen, y_seen, seen_idx)
         )
         return X_seen, y_seen
 
-    # TODO: ensure that -1 is handled correctly
-    # TODO: minimize is fake news
-    def optimize(
-        self,
-        n_iterations: int,
-        n_parallel: int,
-        jit: bool = False,
-        maximize: bool = True,
-        pmap: bool = False,
-        save_results: bool = True,
-    ):
-        if pmap:
-            # TODO: pmap is not supported yet: can't use jax.pmap in the search function
-            logger.warning("pmap is not supported yet: defaulting to vmap instead")
-        # if pmap:
-        #     n_devices = jax.device_count()
-        #     self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])
-        #     if n_devices != n_parallel:
-        #         logger.warning(
-        #             f"Using pmap with {n_devices} devices, "
-        #             f"but {n_parallel} parallel evaluations was requested."
-        #             f"Overriding n_parallel from {n_parallel} to {n_devices}."
-        #         )
-        #         n_parallel = n_devices
-        # else:
-        self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
-
-        if jit:
-            X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
-                n_iterations, n_parallel
-            )
-        else:
-            X_seen, y_seen = self.search(n_iterations, n_parallel)
-        if save_results:
-            self.results = X_seen, y_seen
-        if maximize:
-            max_idx = jnp.where(y_seen == y_seen.max())
-        else:
-            max_idx = jnp.where(y_seen == y_seen.min())
-
-        return X_seen[max_idx].flatten()
-
-    def fit_gp(self, X: jax.Array, y: jax.Array):
+    def fit_gp(self, X: jax.Array, y: jax.Array) -> tuple[jax.Array, jax.Array]:
         X_test = self.domain
 
         # we calculated our posterior distribution conditioned on data
@@ -147,7 +115,7 @@ class BayesianOptimizer(BaseOptimizer):
 
         # TODO: clip to 0
         return y_mean, jnp.sqrt(y_var)
-    
+
     # TODO: not used yet
     def sanitize_and_normalize(self, y_seen: jax.Array):
         # TODO: remove nans and infs and replace with... something?

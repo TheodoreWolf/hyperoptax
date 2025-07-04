@@ -63,7 +63,7 @@ We welcome pull requests! To get started:
 3. Install dependencies:
 
 ```bash
-pip install -e .
+pip install -e ".[notebooks]"
 ```
 
 4. Run the test suite:
@@ -71,9 +71,9 @@ pip install -e .
 ```bash
 python -m unittest discover -s tests
 ```
-
-5. Format your code with `ruff`.
-6. Submit a pull request.
+5. Ensure the notebooks still work.
+6. Format your code with `ruff`.
+7. Submit a pull request.
 
 ## Roadmap
 I'm developing this both as a passion project and for my work in my PhD. I have a few ideas on where to go with this libary:
@@ -84,6 +84,7 @@ I'm developing this both as a passion project and for my work in my PhD. I have 
 - We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
 - Documentation!
 - pmap is broken: need to shard the domain for grid. For bayesian, I'll need to have the GP be shared across gpus.
+- length scale tuning of kernel tuned during optimization (as done in other implementations).
 
 ## 📝 Citation
 
