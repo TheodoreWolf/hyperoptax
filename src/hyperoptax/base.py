@@ -9,10 +9,16 @@ import jax.numpy as jnp
 
 logger = logging.getLogger(__name__)
 
-
+# TODO: implement callback
 class BaseOptimizer(ABC):
-    def __init__(self, domain: dict[str, jax.Array], f: Callable):
+    def __init__(
+        self,
+        domain: dict[str, jax.Array],
+        f: Callable,
+        callback: Callable = lambda x: None,
+    ):
         self.f = f
+        self.callback = callback
         n_args = len(inspect.signature(f).parameters)
         n_points = np.prod([len(domain[k]) for k in domain])
         if n_points > 1e6:

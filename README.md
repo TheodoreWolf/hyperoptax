@@ -28,7 +28,7 @@ pip install --upgrade "jax[cpu]"
 # or GPU/TPU – see the official JAX installation guide
 ```
 ## 🥜 In a nutshell
-Hyperoptax offers a simple API to wrap pure JAX functions for hyperparameter search and making use of parallelization (vmap or pmap). See the [notebooks](https://github.com/TheodoreWolf/hyperoptax/tree/main/notebooks) for more examples.
+Hyperoptax offers a simple API to wrap pure JAX functions for hyperparameter search and making use of parallelization (vmap only currently). See the [notebooks](https://github.com/TheodoreWolf/hyperoptax/tree/main/notebooks) for more examples.
 ```python
 from hyperoptax.bayesian import BayesianOptimizer
 from hyperoptax.spaces import LogSpace, LinearSpace
@@ -74,6 +74,14 @@ python -m unittest discover -s tests
 
 5. Format your code with `ruff`.
 6. Submit a pull request.
+
+## Roadmap
+I'm developing this both as a passion project and for my work in my PhD. I have a few ideas on where to go with this libary:
+- Sample hyperparameter configurations on the fly rather than generate a huge grid at initialisation. 
+- Switch domain type from a list of arrays to a PyTree.
+- Callbacks!
+- Inspired by wandb's sweeps, use a linear grid for all parameters and apply transformations at sample time.
+- We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
 
 ## 📝 Citation
 
