@@ -95,8 +95,9 @@ class BayesianOptimizer(BaseOptimizer):
         pmap: bool = False,
         save_results: bool = True,
     ):
-        # TODO: pmap is not supported yet: can't use jax.pmap in the search function
-        logger.warning("pmap is not supported yet: defaulting to vmap instead")
+        if pmap:
+            # TODO: pmap is not supported yet: can't use jax.pmap in the search function
+            logger.warning("pmap is not supported yet: defaulting to vmap instead")
         # if pmap:
         #     n_devices = jax.device_count()
         #     self.map_f = jax.pmap(self.f, in_axes=(0,) * self.domain.shape[1])

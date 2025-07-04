@@ -7,7 +7,7 @@
 
 ## ⛰️ Introduction
 
-Hyperoptax is a lightweight toolbox for parallel hyperparameter optimisation of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces __in parallel__  – all while staying in pure JAX. 
+Hyperoptax is a lightweight toolbox for parallel hyperparameter optimization of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces __in parallel__  – all while staying in pure JAX. 
 
 ## 🏗️ Installation
 
@@ -28,9 +28,9 @@ pip install --upgrade "jax[cpu]"
 # or GPU/TPU – see the official JAX installation guide
 ```
 ## 🥜 In a nutshell
-Hyperoptax offers a simple API to wrap pure JAX functions for hyperparameter search and making use of parallelisation (vmap or pmap). See the [notebooks](https://github.com/TheodoreWolf/hyperoptax/tree/main/notebooks) for more examples.
+Hyperoptax offers a simple API to wrap pure JAX functions for hyperparameter search and making use of parallelization (vmap or pmap). See the [notebooks](https://github.com/TheodoreWolf/hyperoptax/tree/main/notebooks) for more examples.
 ```python
-from hyperoptax.bayes import BayesOptimiser
+from hyperoptax.bayesian import BayesianOptimizer
 from hyperoptax.spaces import LogSpace, LinearSpace
 
 @jax.jit
@@ -41,18 +41,17 @@ def train_nn(learning_rate, final_lr_pct):
 search_space = {"learning_rate": LogSpace(1e-5,1e-1, 100),
                 "final_lr_pct": LinearSpace(0.01, 0.5, 100)}
 
-search = BayesOptimiser(search_space, train_nn)
+search = BayesianOptimizer(search_space, train_nn)
 best_params = search.optimise(n_iterations=100, 
                               n_parallel=10, 
                               maximise=False,
-                              pmap=True
                               )
 ```
 ## 🔪 The Sharp Bits
 
 Since we are working in pure JAX the same [sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html) apply. Some consequences of this for hyperoptax:
-1. Parameters that change the length of an evaluation (e.g: epochs, generations...) can't be optimised in parallel.
-2. Neural network structures can't be optimised in parallel either.
+1. Parameters that change the length of an evaluation (e.g: epochs, generations...) can't be optimized in parallel.
+2. Neural network structures can't be optimized in parallel either.
 3. Strings can't be used as hyperparameters.
 
 ## 🫂 Contributing
