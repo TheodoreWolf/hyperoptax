@@ -3,7 +3,6 @@ import logging
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax_tqdm import loop_tqdm
 
 from hyperoptax.base import BaseOptimizer
 from hyperoptax.kernels import BaseKernel, Matern
