@@ -64,7 +64,7 @@ We welcome pull requests! To get started:
 3. Install dependencies:
 
 ```bash
-pip install -e ".[notebooks]"
+pip install -e ".[all]"
 ```
 
 4. Run the test suite:
@@ -84,7 +84,7 @@ I'm developing this both as a passion project and for my work in my PhD. I have 
 - Inspired by wandb's sweeps, use a linear grid for all parameters and apply transformations at sample time.
 - We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
 - Documentation!
-- pmap is broken: need to shard the domain for grid. For bayesian, I'll need to have the GP be shared across gpus.
+- Need to find a way to share the GP across workers on pmap for Bayesian.
 - length scale tuning of kernel tuned during optimization (as done in other implementations).
 
 ## 📝 Citation

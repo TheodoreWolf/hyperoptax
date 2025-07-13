@@ -4,11 +4,7 @@ version = "0.1.5"
 description = "Tuning hyperparameters with JAX"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "jax>=0.4.38",
-    "pytest>=8.4.1",
-    "pytest-cov>=6.2.1",
-]
+dependencies = ["jax>=0.4.38"]
 license = "Apache-2.0"
 authors = [{name = "Theo Wolf"}]
 
@@ -23,6 +19,23 @@ notebooks = [
     "bayesian-optimization",
     "bayex"
 ]
+# Testing
+testing = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1"
+]
+
+# Development tools (linting, formatting, etc.)
+dev = [
+    "ruff",
+    "mypy",
+    "pre-commit"
+]
+
+# Complete development environment
+all = [
+    "hyperoptax[notebooks,testing,dev]"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -31,3 +44,15 @@ include = ["hyperoptax*"]
 [build-system]
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
