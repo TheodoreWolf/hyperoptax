@@ -1,5 +1,6 @@
 import inspect
 import logging
+from functools import partial
 from typing import Callable
 
 import numpy as np
@@ -41,16 +42,14 @@ class BaseOptimizer:
     def optimize(
         self,
         n_iterations: int = -1,
-        n_parallel: int = 1,
-        jit: bool = False,
+        n_vmap: int = 1,
+        n_pmap: int = 1,
         maximize: bool = True,
-        n_shards: int = 1,
+        jit: bool = False,
     ):
         if n_iterations == -1:
             n_iterations = self.domain.shape[0]
 
-        if n_shards > 1:
-            self.shard_domain(n_iterations, n_shards)
         if maximize:
             self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
         else:
@@ -58,12 +57,27 @@ class BaseOptimizer:
                 lambda *args: -self.f(*args), in_axes=(0,) * self.domain.shape[1]
             )
 
-        if jit:
+        if n_pmap > 1:
+            assert n_iterations % n_pmap == 0, (
+                "n_iterations must be divisible by n_pmap"
+            )
+            assert n_pmap == jax.local_device_count(), (
+                "n_pmap must be equal to the number of devices"
+            )
+            # TODO: fix this for the bayesian optimizer
+            domains = jnp.array(jnp.array_split(self.domain[:n_iterations], n_pmap))
+            n_iterations = n_iterations // n_pmap
+            X_seen, y_seen = jax.pmap(
+                partial(self.search, n_iterations=n_iterations, n_vmap=n_vmap),
+            )(domain=domains)
+
+        # mostly for debugging purposes
+        elif jit:
             X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
-                n_iterations, n_parallel
+                n_iterations, n_vmap
             )
         else:
-            X_seen, y_seen = self.search(n_iterations, n_parallel)
+            X_seen, y_seen = self.search(n_iterations, n_vmap)
 
         max_idxs = jnp.where(y_seen == y_seen.max())
 

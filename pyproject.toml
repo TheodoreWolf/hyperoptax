@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "jax>=0.4.38",
-    "jax-tqdm>=0.4.0",
 ]
 license = "Apache-2.0"
 authors = [{name = "Theo Wolf"}]

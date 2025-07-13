@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Optional
 import logging
 import jax
 import jax.numpy as jnp
@@ -28,65 +28,69 @@ class BayesianOptimizer(BaseOptimizer):
         self.aquisition = aquisition
         self.jitter = jitter  # has to be quite high to avoid numerical issues
 
+    # TODO:for pmap, we should have a shared y_seen and X_seen array across GPUs.
     def search(
         self,
         n_iterations: int,
-        n_parallel: int,
+        n_vmap: int,
+        domain: Optional[jax.Array] = None,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ) -> tuple[jax.Array, jax.Array]:
+        del domain  # unused
         if n_iterations >= self.domain.shape[0]:
             logger.warning(
                 f"n_iterations={n_iterations} is greater or equal to the number of "
                 f"points in the domain={self.domain.shape[0]},"
                 "this will result in a full grid search."
             )
+
         # Number of batches we need to cover all requested iterations
-        n_batches = (n_iterations + n_parallel - 1) // n_parallel
+        n_batches = (n_iterations + n_vmap - 1) // n_vmap
         n_batches -= 1  # because we do the first batch separately
         idx = jax.random.choice(
             key,
             jnp.arange(len(self.domain)),
-            (n_parallel,),
+            (n_vmap,),
         )
         # Because jax.lax.fori_loop doesn't support dynamic slicing and sizes,
         # we abuse the fact that GPs can handle duplicate points,
         # we can therefore create the array and dynamically replace the values during the loop.
         X_seen = jnp.zeros((n_iterations, self.domain.shape[1]))
-        X_seen = X_seen.at[:n_parallel].set(self.domain[idx])
-        X_seen = X_seen.at[n_parallel:].set(self.domain[idx[0]])
-        results = self.map_f(*X_seen[:n_parallel].T)
+        X_seen = X_seen.at[:n_vmap].set(self.domain[idx])
+        X_seen = X_seen.at[n_vmap:].set(self.domain[idx[0]])
+        results = self.map_f(*X_seen[:n_vmap].T)
 
         y_seen = jnp.zeros(n_iterations)
-        y_seen = y_seen.at[:n_parallel].set(results)
-        y_seen = y_seen.at[n_parallel:].set(results[0])
+        y_seen = y_seen.at[:n_vmap].set(results)
+        y_seen = y_seen.at[n_vmap:].set(results[0])
 
         seen_idx = jnp.zeros(n_iterations)
-        seen_idx = seen_idx.at[:n_parallel].set(idx)
-        seen_idx = seen_idx.at[n_parallel:].set(idx[0])
+        seen_idx = seen_idx.at[:n_vmap].set(idx)
+        seen_idx = seen_idx.at[n_vmap:].set(idx[0])
 
-        @loop_tqdm(n_batches)
+        # @loop_tqdm(n_batches)
         def _inner_loop(i, carry):
             X_seen, y_seen, seen_idx = carry
 
             mean, std = self.fit_gp(X_seen, y_seen)
             # can potentially sample points that are very close to each other
             candidate_idxs = self.aquisition.get_argmax(
-                mean, std, seen_idx, n_points=n_parallel
+                mean, std, seen_idx, n_points=n_vmap
             )
 
             candidate_points = self.domain[candidate_idxs]
             results = self.map_f(*candidate_points.T)
             X_seen = jax.lax.dynamic_update_slice(
-                X_seen, candidate_points, (n_parallel + i * n_parallel, 0)
+                X_seen, candidate_points, (n_vmap + i * n_vmap, 0)
             )
 
             y_seen = jax.lax.dynamic_update_slice(
-                y_seen, results, (n_parallel + i * n_parallel,)
+                y_seen, results, (n_vmap + i * n_vmap,)
             )
             seen_idx = jax.lax.dynamic_update_slice(
                 seen_idx,
                 candidate_idxs.astype(jnp.float32),
-                (n_parallel + i * n_parallel,),
+                (n_vmap + i * n_vmap,),
             )
 
             return X_seen, y_seen, seen_idx
@@ -119,6 +123,3 @@ class BayesianOptimizer(BaseOptimizer):
         y_seen = jnp.where(jnp.isnan(y_seen), jnp.min(y_seen), y_seen)
         y_seen = (y_seen - y_seen.mean()) / (y_seen.std() + 1e-10)
         return y_seen
-
-    def shard_domain(self, n_iterations: int, n_shards: int):
-        raise NotImplementedError("BayesianOptimizer does not support sharding... yet")
