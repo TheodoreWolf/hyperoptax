@@ -103,7 +103,7 @@ class BayesianOptimizer(BaseOptimizer):
         K = self.kernel(X, X)
         K = K + jnp.eye(K.shape[0]) * self.jitter
         L = jsp.linalg.cholesky(K, lower=True)
-        w = jsp.linalg.cho_solve((L, True), y)
+        w = jsp.linalg.cho_solve((L, True), self.sanitize_and_normalize(y))
 
         K_trans = self.kernel(X_test, X)
         y_mean = K_trans @ w
@@ -113,12 +113,12 @@ class BayesianOptimizer(BaseOptimizer):
         # https://github.com/scikit-learn/scikit-learn/blob/main/sklearn/gaussian_process/_gpr.py#L475
         y_var -= jnp.einsum("ij,ji->i", V.T, V)
 
-        # TODO: clip to 0
-        return y_mean, jnp.sqrt(y_var)
+        return y_mean, jnp.sqrt(jnp.clip(y_var, 0))
 
-    # TODO: not used yet
     def sanitize_and_normalize(self, y_seen: jax.Array):
-        # TODO: remove nans and infs and replace with... something?
-        y_seen = y_seen.at[jnp.isnan(y_seen)].set(jnp.nan)
+        y_seen = jnp.where(jnp.isnan(y_seen), jnp.min(y_seen), y_seen)
         y_seen = (y_seen - y_seen.mean()) / (y_seen.std() + 1e-10)
         return y_seen
+
+    def shard_domain(self, n_iterations: int, n_shards: int):
+        raise NotImplementedError("BayesianOptimizer does not support sharding... yet")

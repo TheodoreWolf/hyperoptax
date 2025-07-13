@@ -33,3 +33,25 @@ class TestBaseOptimizer(unittest.TestCase):
             jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
         )
         self.assertEqual(self.optimizer.min["target"], 1)
+
+
+
+# class TestDomain(unittest.TestCase):
+#     def test_domain(self):
+#         domain = {
+#             "x": LinearSpace(0, 1, 10),
+#             "y": LinearSpace(0, 1, 10),
+#             "z": LinearSpace(0, 1, 10),
+#             "agent_kwargs": {
+#                 "lr": LinearSpace(0, 1, 10),
+#                 "batch_size": LinearSpace(0, 1, 10),
+#             },
+#         } 
+
+#         def f(x, y, z, agent_kwargs):
+#             return x + y + z + agent_kwargs["lr"] + agent_kwargs["batch_size"]
+        
+#         f(**domain)
+
+
+

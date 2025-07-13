@@ -8,6 +8,8 @@ import jax.numpy as jnp
 
 logger = logging.getLogger(__name__)
 
+
+# TODO: use existing results if they exist
 # TODO: add support for keys
 # TODO: implement callback/wandb logging
 class BaseOptimizer:
@@ -42,15 +44,13 @@ class BaseOptimizer:
         n_parallel: int = 1,
         jit: bool = False,
         maximize: bool = True,
-        pmap: bool = False,
+        n_shards: int = 1,
     ):
         if n_iterations == -1:
             n_iterations = self.domain.shape[0]
 
-        # TODO: pmap is not supported yet: can't use jax.pmap in the search function
-        # have to shard the domain into n_parallel chunks
-        if pmap:
-            logger.warning("pmap is not supported yet: defaulting to vmap instead")
+        if n_shards > 1:
+            self.shard_domain(n_iterations, n_shards)
         if maximize:
             self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
         else:
@@ -64,7 +64,7 @@ class BaseOptimizer:
             )
         else:
             X_seen, y_seen = self.search(n_iterations, n_parallel)
-        
+
         max_idxs = jnp.where(y_seen == y_seen.max())
 
         if not maximize:
@@ -92,3 +92,6 @@ class BaseOptimizer:
             "target": self.results[1].min(),
             "params": self.results[0][self.results[1].argmin()].flatten(),
         }
+
+    def shard_domain(self, n_iterations: int, n_shards: int):
+        raise NotImplementedError

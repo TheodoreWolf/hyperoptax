@@ -28,6 +28,9 @@ jobs:
         pip install -e .
     
     - name: Run tests
+      env:
+        XLA_FLAGS: "--xla_force_host_platform_device_count=4"
+        JAX_PLATFORM_NAME: "cpu"
       run: |
         python -m unittest discover tests/ -v
     

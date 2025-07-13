@@ -38,7 +38,7 @@ class TestBayes(unittest.TestCase):
 
     def test_bayes_optimizer_when_n_parallel_not_multiple_of_n_iterations(self):
         bayes = BayesianOptimizer(self.high_dim_domain, self.high_dim_function)
-        result = bayes.optimize(n_iterations=100, n_parallel=12)
+        result = bayes.optimize(n_iterations=100, n_parallel=13)
         self.assertTrue(jnp.allclose(result, jnp.array([0.0, 0.0, 0.0, 0.0])))
 
     def test_bayes_optimizer_when_n_iterations_is_minus_1(self):

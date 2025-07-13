@@ -19,6 +19,8 @@ notebooks = [
     "notebook",
     "rejax>=0.1.2",
     "tqdm",
+    "bayesian-optimization",
+    "bayex"
 ]
 
 [tool.setuptools.packages.find]
