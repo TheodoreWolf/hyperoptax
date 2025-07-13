@@ -32,7 +32,12 @@ jobs:
         XLA_FLAGS: "--xla_force_host_platform_device_count=4"
         JAX_PLATFORM_NAME: "cpu"
       run: |
-        python -m unittest discover tests/ -v
+        pytest --cov --cov-branch --cov-report=xml
+    
+    - name: Upload results to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
     
     - name: Build package
       run: python -m build

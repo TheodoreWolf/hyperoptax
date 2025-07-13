@@ -1,12 +1,10 @@
-import unittest
-
 import jax
 import jax.numpy as jnp
 
 from hyperoptax.aquisition import UCB
 
 
-class TestUCB(unittest.TestCase):
+class TestUCB:
     def test_get_argmax_when_no_seen_idx(self):
         ucb = UCB(kappa=2.0)
         mean = jnp.array([1.0, 0.0])
@@ -15,7 +13,7 @@ class TestUCB(unittest.TestCase):
         seen_idx = jnp.array([])
 
         max_val = ucb.get_max(mean, std, X, seen_idx)
-        self.assertTrue(jnp.allclose(max_val, jnp.array([2.0, 2.0])))
+        assert jnp.allclose(max_val, jnp.array([2.0, 2.0]))
 
     def test_get_argmax_when_seen_idx(self):
         ucb = UCB(kappa=2.0)
@@ -25,7 +23,7 @@ class TestUCB(unittest.TestCase):
         seen_idx = jnp.array([0])
 
         max_val = ucb.get_max(mean, std, X, seen_idx)
-        self.assertTrue(jnp.allclose(max_val, jnp.array([0.0, 0.0])))
+        assert jnp.allclose(max_val, jnp.array([0.0, 0.0]))
 
     def test_get_argmax_when_jitted(self):
         ucb = UCB(kappa=2.0)
@@ -35,4 +33,4 @@ class TestUCB(unittest.TestCase):
         seen_idx = jnp.array([0])
 
         max_val = jax.jit(ucb.get_max)(mean, std, X, seen_idx)
-        self.assertTrue(jnp.allclose(max_val, jnp.array([0.0, 0.0])))
+        assert jnp.allclose(max_val, jnp.array([0.0, 0.0]))
