@@ -51,7 +51,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
-ignore = []
+ignore = ["N803", "N806"]  # Allow uppercase variable names
 
 [tool.ruff.format]
 quote-style = "double"

@@ -1,5 +1,4 @@
 import logging
-from functools import partial
 from typing import Callable, Optional
 
 import jax
@@ -65,11 +64,13 @@ class GridSearch(BaseOptimizer):
     #     n_devices = jax.local_device_count()
     #     if n_devices < n_parallel:
     #         raise ValueError(
-    #             f"Number of devices ({n_devices}) is less than the number of parallel evaluations ({n_parallel})."
+    #             f"Number of devices ({n_devices}) is less than the number of "
+    #             f"parallel evaluations ({n_parallel})."
     #         )
     #     if n_devices > n_parallel:
     #         logger.info(
-    #             f"I found {n_devices} devices, but you only requested {n_parallel} parallel evaluations."
+    #             f"I found {n_devices} devices, but you only requested "
+    #             f"{n_parallel} parallel evaluations."
     #         )
     #     devices = jax.devices()
     #     mesh = Mesh(devices, ("devices",))

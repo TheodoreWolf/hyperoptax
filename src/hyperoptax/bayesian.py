@@ -1,13 +1,14 @@
-from typing import Callable, Optional
 import logging
+from typing import Callable, Optional
+
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 
+from hyperoptax.aquisition import UCB, BaseAquisition
 from hyperoptax.base import BaseOptimizer
 from hyperoptax.kernels import BaseKernel, Matern
 from hyperoptax.spaces import BaseSpace
-from hyperoptax.aquisition import BaseAquisition, UCB
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ class BayesianOptimizer(BaseOptimizer):
         )
         # Because jax.lax.fori_loop doesn't support dynamic slicing and sizes,
         # we abuse the fact that GPs can handle duplicate points,
-        # we can therefore create the array and dynamically replace the values during the loop.
+        # we can therefore create the array and dynamically replace
+        # the values during the loop.
         X_seen = jnp.zeros((n_iterations, self.domain.shape[1]))
         X_seen = X_seen.at[:n_vmap].set(self.domain[idx])
         X_seen = X_seen.at[n_vmap:].set(self.domain[idx[0]])
