@@ -12,7 +12,7 @@ class TestRBF:
     def test_rbf_with_same_points(self):
         kernel = RBF(length_scale=1.0)
         # correlation matrix should be all ones
-        assert jnp.allclose(kernel(self.x, self.x), kernel.diag(self.x)) == True
+        assert jnp.allclose(kernel(self.x, self.x), kernel.diag(self.x))
         assert jnp.allclose(kernel(self.x, self.x), jnp.full((3, 3), 1.0))
 
     def test_rbf_with_different_points(self):

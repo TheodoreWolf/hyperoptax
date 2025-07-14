@@ -44,7 +44,7 @@ class TestBayes:
         result = bayes.optimize(n_iterations=-1, n_vmap=2)
         assert jnp.allclose(result, jnp.array([0.0]))
 
-    def test_BayesianOptimizer_when_maximize_is_false(self):
+    def test_optimizer_when_maximize_is_false(self):
         def minus_f(x, y, z, w):
             return -self.high_dim_function(x, y, z, w)
 
