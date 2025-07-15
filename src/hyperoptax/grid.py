@@ -26,7 +26,11 @@ class GridSearch(BaseOptimizer):
             self.domain = self.domain[idxs]
 
     def search(
-        self, n_iterations: int, n_vmap: int, domain: Optional[jax.Array] = None
+        self,
+        n_iterations: int,
+        n_vmap: int,
+        key: jax.random.PRNGKey,
+        domain: Optional[jax.Array] = None,
     ):
         if domain is None:
             domain = self.domain[:n_iterations]
@@ -46,7 +50,7 @@ class GridSearch(BaseOptimizer):
                 (start_idx, 0),
                 (n_vmap, n_dims),
             )
-
+            # TODO: add way to put key as optional argument
             batch_results = self.map_f(*batch.T)
             return start_idx + n_vmap, batch_results
 

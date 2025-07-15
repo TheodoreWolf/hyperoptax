@@ -46,6 +46,7 @@ class BaseOptimizer:
         n_pmap: int = 1,
         maximize: bool = True,
         jit: bool = False,
+        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
         if n_iterations == -1:
             n_iterations = self.domain.shape[0]
@@ -68,16 +69,16 @@ class BaseOptimizer:
             domains = jnp.array(jnp.array_split(self.domain[:n_iterations], n_pmap))
             n_iterations = n_iterations // n_pmap
             X_seen, y_seen = jax.pmap(
-                partial(self.search, n_iterations=n_iterations, n_vmap=n_vmap),
+                partial(self.search, n_iterations=n_iterations, n_vmap=n_vmap, key=key),
             )(domain=domains)
 
         # mostly for debugging purposes
         elif jit:
             X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
-                n_iterations, n_vmap
+                n_iterations, n_vmap, key
             )
         else:
-            X_seen, y_seen = self.search(n_iterations, n_vmap)
+            X_seen, y_seen = self.search(n_iterations, n_vmap, key)
 
         max_idxs = jnp.where(y_seen == y_seen.max())
 
@@ -88,7 +89,7 @@ class BaseOptimizer:
 
         return X_seen[max_idxs].squeeze()
 
-    def search(self, n_iterations: int, n_parallel: int):
+    def search(self, n_iterations: int, n_parallel: int, key: jax.random.PRNGKey):
         raise NotImplementedError
 
     @property

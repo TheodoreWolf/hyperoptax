@@ -33,8 +33,8 @@ class BayesianOptimizer(BaseOptimizer):
         self,
         n_iterations: int,
         n_vmap: int,
+        key: jax.random.PRNGKey,
         domain: Optional[jax.Array] = None,
-        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ) -> tuple[jax.Array, jax.Array]:
         del domain  # unused
         if n_iterations >= self.domain.shape[0]:
@@ -71,12 +71,13 @@ class BayesianOptimizer(BaseOptimizer):
 
         # @loop_tqdm(n_batches)
         def _inner_loop(i, carry):
-            X_seen, y_seen, seen_idx = carry
+            X_seen, y_seen, seen_idx, key = carry
+            key, subkey = jax.random.split(key)
 
             mean, std = self.fit_gp(X_seen, y_seen)
             # can potentially sample points that are very close to each other
-            candidate_idxs = self.acquisition.get_argmax(
-                mean, std, seen_idx, n_points=n_vmap
+            candidate_idxs = self.acquisition.get_stochastic_argmax(
+                mean, std, seen_idx, n_points=n_vmap, key=subkey
             )
 
             candidate_points = self.domain[candidate_idxs]
@@ -94,10 +95,10 @@ class BayesianOptimizer(BaseOptimizer):
                 (n_vmap + i * n_vmap,),
             )
 
-            return X_seen, y_seen, seen_idx
+            return X_seen, y_seen, seen_idx, key
 
-        (X_seen, y_seen, seen_idx) = jax.lax.fori_loop(
-            0, n_batches, _inner_loop, (X_seen, y_seen, seen_idx)
+        (X_seen, y_seen, seen_idx, _) = jax.lax.fori_loop(
+            0, n_batches, _inner_loop, (X_seen, y_seen, seen_idx, key)
         )
         return X_seen, y_seen
 
