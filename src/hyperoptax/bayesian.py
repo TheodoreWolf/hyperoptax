@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 
-from hyperoptax.aquisition import UCB, BaseAquisition
+from hyperoptax.acquisition import UCB, BaseAcquisition
 from hyperoptax.base import BaseOptimizer
 from hyperoptax.kernels import BaseKernel, Matern
 from hyperoptax.spaces import BaseSpace
@@ -19,13 +19,13 @@ class BayesianOptimizer(BaseOptimizer):
         domain: dict[str, BaseSpace],
         f: Callable,
         kernel: BaseKernel = Matern(length_scale=1.0, nu=2.5),
-        aquisition: BaseAquisition = UCB(kappa=2.0),
+        acquisition: BaseAcquisition = UCB(kappa=2.0),
         jitter: float = 1e-6,
     ):
         super().__init__(domain, f)
 
         self.kernel = kernel
-        self.aquisition = aquisition
+        self.acquisition = acquisition
         self.jitter = jitter  # has to be quite high to avoid numerical issues
 
     # TODO:for pmap, we should have a shared y_seen and X_seen array across GPUs.
@@ -75,7 +75,7 @@ class BayesianOptimizer(BaseOptimizer):
 
             mean, std = self.fit_gp(X_seen, y_seen)
             # can potentially sample points that are very close to each other
-            candidate_idxs = self.aquisition.get_argmax(
+            candidate_idxs = self.acquisition.get_argmax(
                 mean, std, seen_idx, n_points=n_vmap
             )
 
