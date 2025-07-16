@@ -45,6 +45,15 @@ include = ["hyperoptax*"]
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
+[dependency-groups]
+docs = [
+    "sphinx>=6.1",
+    "myst-parser",
+    "nbsphinx", 
+    "sphinx-book-theme>=1.1.4",
+    "sphinx-autobuild"
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"

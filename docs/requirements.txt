@@ -1,0 +1,5 @@
+sphinx>=6.1
+myst-parser
+nbsphinx
+sphinx-book-theme>=1.1.4
+sphinx-autobuild 

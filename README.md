@@ -1,4 +1,4 @@
-<img src="logo.png" alt="Hyperoptax Logo" style="width:80%;"/>
+<img src="./assets/logo.png" alt="Hyperoptax Logo" style="width:80%;"/>
 
 # Hyperoptax: Parallel hyperparameter tuning with JAX
 
@@ -48,6 +48,8 @@ best_params = search.optimize(n_iterations=100,
                               maximize=False,
                               )
 ```
+<img src="./assets/gp_animation.gif" alt="BayesOpt animation" style="width:80%;"/>
+
 ## 🔪 The Sharp Bits
 
 Since we are working in pure JAX the same [sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html) apply. Some consequences of this for hyperoptax:
@@ -70,7 +72,7 @@ pip install -e ".[all]"
 4. Run the test suite:
 
 ```bash
-python -m unittest discover -s tests
+XLA_FLAGS=--xla_force_host_platform_device_count=4 pytest # Fake GPUs for pmap tests
 ```
 5. Ensure the notebooks still work.
 6. Format your code with `ruff`.
@@ -83,7 +85,6 @@ I'm developing this both as a passion project and for my work in my PhD. I have 
 - Callbacks!
 - Inspired by wandb's sweeps, use a linear grid for all parameters and apply transformations at sample time.
 - We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
-- Documentation!
 - Need to find a way to share the GP across workers on pmap for Bayesian.
 - length scale tuning of kernel tuned during optimization (as done in other implementations).
 
