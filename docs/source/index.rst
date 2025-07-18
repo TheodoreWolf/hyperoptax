@@ -3,6 +3,12 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+.. raw:: html
+
+   <div class="wip-warning">
+   🚧 WORK IN PROGRESS - This documentation is currently under development 🚧
+   </div>
+
 Hyperoptax Documentation
 ========================
 

@@ -63,6 +63,7 @@ intersphinx_mapping = {
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 
 # Theme options
 html_theme_options = {
@@ -75,6 +76,8 @@ html_theme_options = {
     "home_page_in_toc": True,
     "show_navbar_depth": 2,
     "logo": {
+        "image_light": "_static/manifold.png",
+        "image_dark": "_static/manifold.png",
         "text": "Hyperoptax",
         "alt_text": "Hyperoptax - Parallel hyperparameter tuning with JAX",
     },

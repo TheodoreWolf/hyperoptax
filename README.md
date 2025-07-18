@@ -1,10 +1,13 @@
-<img src="./assets/logo.png" alt="Hyperoptax Logo" style="width:80%;"/>
+<img src="./assets/logo_transparent.png" alt="Hyperoptax Logo" style="width:80%;"/>
 
 # Hyperoptax: Parallel hyperparameter tuning with JAX
 
 [![PyPI version](https://img.shields.io/pypi/v/hyperoptax)](https://pypi.org/project/hyperoptax)
 ![CI status](https://github.com/TheodoreWolf/hyperoptax/actions/workflows/test.yml/badge.svg?branch=main)
 [![codecov](https://codecov.io/gh/TheodoreWolf/hyperoptax/graph/badge.svg?token=Y582MZ25GG)](https://codecov.io/gh/TheodoreWolf/hyperoptax)
+
+>[!NOTE]
+> Hyperoptax is still a WIP and the API is subject to change. There are _many_ rough edges to smooth out. It is recommended to download specific versions or to download from source if you want to use it in a large scale project.
 
 ## ⛰️ Introduction
 
@@ -48,6 +51,8 @@ best_params = search.optimize(n_iterations=100,
                               maximize=False,
                               )
 ```
+
+## 💪 Hyperoptax in action
 <img src="./assets/gp_animation.gif" alt="BayesOpt animation" style="width:80%;"/>
 
 ## 🔪 The Sharp Bits
@@ -86,14 +91,15 @@ I'm developing this both as a passion project and for my work in my PhD. I have 
 - Inspired by wandb's sweeps, use a linear grid for all parameters and apply transformations at sample time.
 - We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
 - Need to find a way to share the GP across workers on pmap for Bayesian.
-- length scale tuning of kernel tuned during optimization (as done in other implementations).
+- Length scale tuning of kernel tuned during optimization (as done in other implementations).
+- Some clumpiness in the acquisisiton, there is literature that can help us.
 
 ## 📝 Citation
 
 If you use Hyperoptax in academic work, please cite:
 
 ```bibtex
-@misc{hyperoptax2025,
+@misc{hyperoptax,
   author = {Theo Wolf},
   title = {{Hyperoptax}: Parallel hyperparameter tuning with JAX},
   year = {2025},

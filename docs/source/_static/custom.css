@@ -1,0 +1,85 @@
+/* Custom styles for Hyperoptax documentation */
+
+/* WIP Warning Banner */
+.wip-warning {
+    background: linear-gradient(45deg, #ff4444, #cc0000);
+    color: white;
+    padding: 15px 20px;
+    margin: 0;
+    text-align: center;
+    font-weight: bold;
+    font-size: 16px;
+    border: none;
+    box-shadow: 0 2px 8px rgba(255, 68, 68, 0.3);
+    position: relative;
+    z-index: 1000;
+}
+
+.wip-warning::before {
+    content: "⚠️";
+    font-size: 24px;
+    margin-right: 10px;
+    animation: pulse 2s infinite;
+}
+
+.wip-warning::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(45deg,
+            transparent,
+            transparent 10px,
+            rgba(255, 255, 255, 0.1) 10px,
+            rgba(255, 255, 255, 0.1) 20px);
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+}
+
+/* Logo sizing */
+.logo__image {
+    max-height: 150px !important;
+    width: auto !important;
+    margin-right: 10px;
+}
+
+/* Alternative size options - uncomment one of these if you want different sizing:
+
+/* Small logo */
+/*
+.logo__image {
+    max-height: 30px !important;
+    width: auto !important;
+    margin-right: 8px;
+}
+*/
+
+/* Medium logo */
+/*
+.logo__image {
+    max-height: 50px !important;
+    width: auto !important;
+    margin-right: 8px;
+}
+*/
+
+/* Large logo */
+/*
+.logo__image {
+    max-height: 60px !important;
+    width: auto !important;
+    margin-right: 8px;
+}
+*/
