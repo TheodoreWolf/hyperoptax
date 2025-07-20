@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 # TODO: add support for keys
 # TODO: implement callback/wandb logging
 class BaseOptimizer:
+    """
+    Base class for optimizers.
+
+    Args:
+        domain (dict[str, jax.Array]): The domain of the optimizer.
+        f (Callable): The function to optimize.
+        callback (Callable): A callback function to call after each iteration.
+    """
+
     def __init__(
         self,
         domain: dict[str, jax.Array],
@@ -36,6 +45,8 @@ class BaseOptimizer:
             f"Function must have the same number of arguments as the domain, "
             f"got {n_args} arguments and {len(domain)} domains."
         )
+        # we make a grid of all the points in the domain
+        # in future versions we want to sample points from the domain
         grid = jnp.array(jnp.meshgrid(*[space.array for space in domain.values()]))
         self.domain = grid.reshape(n_args, n_points).T
 
@@ -48,6 +59,21 @@ class BaseOptimizer:
         jit: bool = False,
         key: jax.random.PRNGKey = jax.random.PRNGKey(0),
     ):
+        """
+        Optimize the function.
+        Note: pmap doesn't work as expected for the Bayesian optimizer... yet.
+
+        Args:
+            n_iterations (int): The number of iterations to run.
+            n_vmap (int): The number of points to evaluate in parallel on the
+                same device.
+            n_pmap (int): The number of points to evaluate in parallel on different
+                devices.
+            maximize (bool): Whether to maximize or minimize the function.
+            jit (bool): Whether to jit the function.
+            key (jax.random.PRNGKey): The random key to use for sampling.
+
+        """
         if n_iterations == -1:
             n_iterations = self.domain.shape[0]
 
@@ -94,6 +120,12 @@ class BaseOptimizer:
 
     @property
     def max(self) -> dict[str, jax.Array]:
+        """
+        Get the maximum value and parameters of the function.
+
+        Returns:
+            dict[str, jax.Array]: A dictionary with the maximum value and parameters.
+        """
         assert self.results is not None, "No results found, run optimize first."
         return {
             "target": self.results[1].max(),
@@ -102,11 +134,14 @@ class BaseOptimizer:
 
     @property
     def min(self) -> dict[str, jax.Array]:
+        """
+        Get the minimum value and parameters of the function.
+
+        Returns:
+            dict[str, jax.Array]: A dictionary with the minimum value and parameters.
+        """
         assert self.results is not None, "No results found, run optimize first."
         return {
             "target": self.results[1].min(),
             "params": self.results[0][self.results[1].argmin()].flatten(),
         }
-
-    def shard_domain(self, n_iterations: int, n_shards: int):
-        raise NotImplementedError

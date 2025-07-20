@@ -103,6 +103,17 @@ class BayesianOptimizer(BaseOptimizer):
         return X_seen, y_seen
 
     def fit_gp(self, X: jax.Array, y: jax.Array) -> tuple[jax.Array, jax.Array]:
+        """
+        Fit a Gaussian process to the data.
+
+        Args:
+            X (N, D): The points that have been evaluated.
+            y (N,): The values of the points that have been evaluated.
+
+        Returns:
+            (N,): The mean of the Gaussian process.
+            (N,): The standard deviation of the Gaussian process.
+        """
         X_test = self.domain
 
         # we calculated our posterior distribution conditioned on data
@@ -122,6 +133,16 @@ class BayesianOptimizer(BaseOptimizer):
         return y_mean, jnp.sqrt(jnp.clip(y_var, 0))
 
     def sanitize_and_normalize(self, y_seen: jax.Array):
+        """
+        Sanitize the values of the points that have been evaluated.
+        This is to avoid numerical issues.
+
+        Args:
+            y_seen (N,): The values of the points that have been evaluated.
+
+        Returns:
+            (N,): The sanitized values of the points that have been evaluated.
+        """
         y_seen = jnp.where(jnp.isnan(y_seen), jnp.min(y_seen), y_seen)
         y_seen = (y_seen - y_seen.mean()) / (y_seen.std() + 1e-10)
         return y_seen

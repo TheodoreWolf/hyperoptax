@@ -6,6 +6,23 @@ import jax.numpy as jnp
 
 @dataclass
 class BaseSpace:
+    """Base class for one-dimensional search spaces.
+
+    A *search space* is a discrete 1-D grid of numeric values that a
+    hyper-parameter can take.  Sub-classes must implement the
+    :pyattr:`array` property that returns a 1-D :class:`jax.Array` with
+    length ``n_points``.
+
+    Attributes
+    ----------
+    start : float | int
+        Inclusive lower bound of the space.
+    end : float | int
+        Inclusive upper bound of the space.
+    n_points : int
+        Number of discrete values between ``start`` and ``end``.
+    """
+
     start: float | int
     end: float | int
     n_points: float | int
@@ -26,6 +43,16 @@ class BaseSpace:
 
 @dataclass
 class ArbitrarySpace:
+    """Search space defined by an *explicit* list of values.
+
+    Parameters
+    ----------
+    values : list[float | int]
+        A sequence of numeric values.
+    name : str, default = "arbitrary_space"
+        Human-readable identifier.
+    """
+
     values: list[int | float]
     name: str = "arbitrary_space"
 
@@ -45,6 +72,11 @@ class ArbitrarySpace:
 
 @dataclass
 class LinearSpace(BaseSpace):
+    """Linearly spaced grid between ``start`` and ``end``.
+
+    All constructor arguments are inherited from :class:`BaseSpace`.
+    """
+
     name: str = "linear_space"
 
     @property
@@ -54,6 +86,16 @@ class LinearSpace(BaseSpace):
 
 @dataclass
 class LogSpace(BaseSpace):
+    """Logarithmically spaced grid.
+
+    Values are spaced evenly in log-space with a configurable ``base``.
+
+    Additional Parameters
+    ---------------------
+    base : float | int, default = 10
+        Logarithm base.
+    """
+
     base: float | int = 10
     name: str = "log_space"
 
@@ -77,6 +119,11 @@ class LogSpace(BaseSpace):
 
 @dataclass
 class ExpSpace(LogSpace):
+    """Inverse of :class:`LogSpace`.
+
+    Returns ``base ** linspace(start, end, n_points)``.
+    """
+
     base: float | int = 10
     name: str = "exp_space"
 
@@ -93,6 +140,13 @@ class ExpSpace(LogSpace):
 
 @dataclass
 class QuantizedLinearSpace:
+    """Linearly spaced grid with a fixed *step size*.
+
+    Instead of specifying ``n_points`` directly, the resolution is derived
+    from a ``quantization_factor`` (i.e. the distance between two
+    consecutive values).
+    """
+
     start: int | float
     end: int | float
     quantization_factor: int | float

@@ -45,6 +45,10 @@ autodoc_default_options = {
 # Autosummary configuration
 autosummary_generate = True
 
+# Include type hints in the description rather than the signature so that
+# Sphinx Napoleon + autodoc produce cleaner function/class signatures.
+autodoc_typehints = "description"
+
 # Napoleon configuration (for better docstring parsing)
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
@@ -74,7 +78,11 @@ html_theme_options = {
     "path_to_docs": "docs/source",
     "repository_branch": "main",
     "home_page_in_toc": True,
-    "show_navbar_depth": 2,
+    # Make the left sidebar navigation static
+    # Show only top-level items by default
+    "show_navbar_depth": 1,
+    # Disable expansion to keep a fixed navigation layout
+    "collapse_navbar": True,
     "logo": {
         "image_light": "_static/manifold.png",
         "image_dark": "_static/manifold.png",
@@ -86,3 +94,14 @@ html_theme_options = {
 # Additional HTML configuration
 html_title = "Hyperoptax Documentation"
 html_short_title = "Hyperoptax"
+
+# Disable the built-in page-level Table of Contents sidebar so the navigation
+# bar doesn’t jump around when heading structures differ between pages.
+html_sidebars = {
+    "**": [
+        "navbar-logo.html",
+        "icon-links.html",
+        "search-button-field.html",
+        "sbt-sidebar-nav.html",
+    ]
+}

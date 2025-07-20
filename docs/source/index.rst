@@ -39,16 +39,7 @@ Quick Start
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
-
-   api/index
-
-API Reference
-=============
-
-.. toctree::
-   :maxdepth: 2
-   :caption: API Reference:
+   :titlesonly:
 
    api/optimizers
    api/spaces

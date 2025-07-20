@@ -6,10 +6,24 @@ import jax.numpy as jnp
 
 def cdist(x: jax.Array, y: jax.Array) -> jax.Array:
     # jax compatible cdist https://github.com/jax-ml/jax/discussions/15862
+    """Pairwise Euclidean distance (``cdist``) between two 2-D arrays.
+
+    Parameters
+    ----------
+    x, y : jax.Array
+        Arrays with shape ``(N, D)`` and ``(M, D)``, respectively.
+
+    Returns
+    -------
+    jax.Array
+        A distance matrix of shape ``(N, M)``.
+    """
     return jnp.sqrt(jnp.sum((x[:, None] - y[None, :]) ** 2, -1))
 
 
 class BaseKernel(ABC):
+    """Abstract base class for positive-definite kernels."""
+
     @abstractmethod
     def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
         raise NotImplementedError
@@ -19,6 +33,8 @@ class BaseKernel(ABC):
 
 
 class RBF(BaseKernel):
+    """Radial basis function (RBF) / squared-exponential kernel."""
+
     def __init__(self, length_scale: float = 1.0):
         self.length_scale = length_scale
 
@@ -30,6 +46,16 @@ class RBF(BaseKernel):
 
 
 class Matern(RBF):
+    """Matern kernel family.
+
+    Parameters
+    ----------
+    length_scale : float, default = 1.0
+        Characteristic length scale.
+    nu : float, default = 2.5
+        Controls smoothness (``nu`` ∈ {0.5, 1.5, 2.5, ∞}).
+    """
+
     def __init__(self, length_scale: float = 1.0, nu: float = 2.5):
         self.length_scale = length_scale
         self.nu = nu  # controls smoothness of the kernel, lower is less smooth
