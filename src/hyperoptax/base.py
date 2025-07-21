@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # TODO: implement callback/wandb logging
 class BaseOptimizer:
     """
-    Base class for optimizers.
+    Base class for optimizers/grid search.
 
     Args:
         domain (dict[str, jax.Array]): The domain of the optimizer.

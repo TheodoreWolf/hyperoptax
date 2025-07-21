@@ -18,14 +18,14 @@ class BayesianOptimizer(BaseOptimizer):
         self,
         domain: dict[str, BaseSpace],
         f: Callable,
-        kernel: BaseKernel = Matern(length_scale=1.0, nu=2.5),
-        acquisition: BaseAcquisition = UCB(kappa=2.0),
+        kernel: Optional[BaseKernel] = None,
+        acquisition: Optional[BaseAcquisition] = None,
         jitter: float = 1e-6,
     ):
         super().__init__(domain, f)
 
-        self.kernel = kernel
-        self.acquisition = acquisition
+        self.kernel = kernel or Matern(length_scale=1.0, nu=2.5)
+        self.acquisition = acquisition or UCB(kappa=2.0)
         self.jitter = jitter  # has to be quite high to avoid numerical issues
 
     # TODO:for pmap, we should have a shared y_seen and X_seen array across GPUs.

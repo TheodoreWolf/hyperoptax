@@ -16,9 +16,10 @@ class GridSearch(BaseOptimizer):
         domain: dict[str, BaseSpace],
         f: Callable,
         random_search: bool = False,
-        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+        key: Optional[jax.random.PRNGKey] = None,
     ):
         super().__init__(domain, f)
+        key = key or jax.random.PRNGKey(0)
         if random_search:
             idxs = jax.random.choice(
                 key, self.domain.shape[0], (self.domain.shape[0],), replace=False

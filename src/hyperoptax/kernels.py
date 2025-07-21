@@ -5,7 +5,6 @@ import jax.numpy as jnp
 
 
 def cdist(x: jax.Array, y: jax.Array) -> jax.Array:
-    # jax compatible cdist https://github.com/jax-ml/jax/discussions/15862
     """Pairwise Euclidean distance (``cdist``) between two 2-D arrays.
 
     Parameters
@@ -18,6 +17,7 @@ def cdist(x: jax.Array, y: jax.Array) -> jax.Array:
     jax.Array
         A distance matrix of shape ``(N, M)``.
     """
+    # jax compatible cdist https://github.com/jax-ml/jax/discussions/15862
     return jnp.sqrt(jnp.sum((x[:, None] - y[None, :]) ** 2, -1))
 
 
@@ -30,8 +30,6 @@ class BaseKernel(ABC):
 
 
 # TODO: add basic operations between kernels
-
-
 class RBF(BaseKernel):
     """Radial basis function (RBF) / squared-exponential kernel."""
 

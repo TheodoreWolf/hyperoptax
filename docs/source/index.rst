@@ -14,7 +14,7 @@ Hyperoptax Documentation
 
 Welcome to Hyperoptax - a lightweight toolbox for parallel hyperparameter optimization of pure JAX functions.
 
-Hyperoptax provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across parameter spaces **in parallel** – all while staying in pure JAX.
+Hyperoptax provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across parameter spaces **in parallel** - all while staying in pure JAX.
 
 Quick Start
 -----------
