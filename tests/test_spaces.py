@@ -1,52 +1,95 @@
+import jax
 import jax.numpy as jnp
+import pytest
 
-from hyperoptax import spaces as sp
-
-
-class TestArbitrarySpace:
-    def test_setup(self):
-        space = sp.ArbitrarySpace(values=[0, 2, 5, 10])
-        assert space.start == 0
-        assert space.end == 10
-        assert space.n_points == 4
+from src.hyperoptax import spaces as sp
 
 
-class TestLinearSpace:
-    def test_array(self):
-        space = sp.LinearSpace(0, 1, 11)
-        expected = jnp.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
-        assert jnp.allclose(space.array, expected)
+def test_space():
+    space = sp.LinearSpace(0, 1)
+    assert space.sample(jax.random.PRNGKey(0)).shape == (1,)
 
 
-class TestLogSpace:
-    def test_array_log_base_10(self):
-        space = sp.LogSpace(1e-4, 1e-1, 4)
-        expected = jnp.array([1e-4, 1e-3, 1e-2, 1e-1])
-        assert jnp.allclose(space.array, expected)
-
-    def test_array_log_base_2(self):
-        space = sp.LogSpace(32, 256, 4, 2)
-        expected = jnp.array([32, 64, 128, 256])
-        assert jnp.allclose(space.array, expected)
+def test_space_sample_in_pytree():
+    space = {"a": sp.LinearSpace(0, 1), "b": sp.LinearSpace(2, 3)}
+    key = jax.random.PRNGKey(0)
+    sample = jax.tree.map(
+        lambda x: x.sample(key), space, is_leaf=lambda x: isinstance(x, sp.Space)
+    )
+    assert sample["a"].shape == (1,)
+    assert sample["b"].shape == (1,)
 
 
-class TestExpSpace:
-    def test_array_exp_base_10(self):
-        space = sp.ExpSpace(0.5, 1, 2, base=10)
-        expected = jnp.array([0.5, 1])
-        assert jnp.allclose(space.array, expected)
+def test_discrete_space():
+    space = sp.DiscreteSpace([0, 1, 2, 3])
+    assert space.sample(jax.random.PRNGKey(0)).shape == (1,)
+    assert space.sample(jax.random.PRNGKey(0)) in [0, 1, 2, 3]
 
 
-class TestQuantizedLinearSpace:
-    def test_array(self):
-        space = sp.QuantizedLinearSpace(0, 1, 0.1)
-        expected = jnp.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
-        assert jnp.allclose(space.array, expected)
+def test_discrete_space_sample_in_pytree():
+    space = {"a": sp.DiscreteSpace([0, 1, 2, 3]), "b": sp.DiscreteSpace([4, 5, 6, 7])}
+    key = jax.random.PRNGKey(0)
+    sample = jax.tree.map(
+        lambda x: x.sample(key),
+        space,
+        is_leaf=lambda x: isinstance(x, sp.DiscreteSpace),
+    )
+    assert sample["a"].shape == (1,)
+    assert sample["b"].shape == (1,)
+    assert sample["a"] in [0, 1, 2, 3]
+    assert sample["b"] in [4, 5, 6, 7]
 
 
-# need to figure out what the best test is
-# class TestQuantizedLogSpace:
-#     def test_array(self):
-#         space = sp.QuantizedLogSpace(32, 256, 2)
-#         expected = jnp.array([32, 64, 128, 256])
-#         assert jnp.allclose(space.array, expected)
+def test_log_space():
+    space = sp.LogSpace(1e-4, 1e-1)
+    assert space.sample(jax.random.PRNGKey(0)).shape == (1,)
+    assert space.sample(jax.random.PRNGKey(0)) > 1e-4
+    assert space.sample(jax.random.PRNGKey(0)) < 1e-1
+
+
+def test_log_space_sample_in_pytree():
+    space = {"a": sp.LogSpace(1e-4, 1e-1), "b": sp.LogSpace(1e-3, 1e-2)}
+    key = jax.random.PRNGKey(0)
+    sample = jax.tree.map(
+        lambda x: x.sample(key), space, is_leaf=lambda x: isinstance(x, sp.LogSpace)
+    )
+    assert sample["a"].shape == (1,)
+    assert sample["b"].shape == (1,)
+    assert sample["a"] > 1e-4
+    assert sample["a"] < 1e-1
+    assert sample["b"] < 1e-2
+    assert sample["b"] > 1e-3
+
+
+def test_logspace_with_different_bases():
+    space = sp.LogSpace(2, 64, base=2)
+    sample = space.sample(jax.random.PRNGKey(0))
+    assert sample.shape == (1,)
+    assert sample > 2
+    assert sample < 64
+
+
+def test_qspace():
+    space = sp.QLinearSpace(0, 100)
+    sample = space.sample(jax.random.PRNGKey(0))
+    assert sample.shape == (1,)
+    assert sample.dtype == jnp.int32
+    assert sample >= 0
+    assert sample <= 100
+
+
+def test_qlogspace():
+    space = sp.QLogSpace(2, 128, base=2)
+    sample = space.sample(jax.random.PRNGKey(0))
+    assert sample.shape == (1,)
+    assert sample.dtype == jnp.int32
+    assert sample >= 2
+    assert sample <= 128
+
+
+def test_space_post_init():
+    sp.LogSpace(0, 10, base=2)
+    with pytest.raises(AssertionError):
+        sp.LogSpace(10, 0)
+    with pytest.raises(AssertionError):
+        sp.LogSpace(0, 10, base=1)
