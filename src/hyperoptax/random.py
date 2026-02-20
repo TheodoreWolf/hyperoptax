@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from flax import struct
 
 from hyperoptax import spaces as sp
+from hyperoptax import utils
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +86,7 @@ class RandomSearch(Optimizer):
         ) -> tuple[OptimizerState, tuple[jax.Array, struct.PyTreeNode]]:
             state, key = carry
             key, subkey = jax.random.split(key)
-            tree = jax.tree_util.tree_structure(
-                state.space, is_leaf=lambda x: isinstance(x, sp.Space)
-            )
-            keys = jax.random.split(subkey, tree.num_leaves)
-            keys = jax.tree_util.tree_unflatten(tree, keys)
+            keys = utils.make_key_tree(state.space, subkey)
             next_params = jax.tree.map(
                 lambda x, k: x.sample(k),
                 state.space,
@@ -162,11 +159,7 @@ class GridSearch(Optimizer):
         def _step(carry, _):
             key, state = carry
             key, subkey = jax.random.split(key)
-            tree = jax.tree_util.tree_structure(
-                state.space, is_leaf=lambda x: isinstance(x, sp.Space)
-            )
-            keys = jax.random.split(subkey, tree.num_leaves)
-            keys = jax.tree_util.tree_unflatten(tree, keys)
+            keys = utils.make_key_tree(state.space, subkey)
             next_params = jax.tree.map(
                 lambda x, y: jnp.array(x.values).at[y].get(),
                 state.space,
@@ -185,15 +178,14 @@ class GridSearch(Optimizer):
 
 
 def update_state(state: GridSearchState) -> GridSearchState:
-    # Flatten state.space_idx to get leaves + treedef
     idx_leaves, idx_treedef = jax.tree_util.tree_flatten(state.space_idx)
     space_leaves, _ = jax.tree_util.tree_flatten(
         state.space, is_leaf=lambda x: isinstance(x, sp.Space)
     )
     N = len(idx_leaves)
-    idx_arr = jnp.stack(idx_leaves)
+    idx_arr = jnp.stack(idx_leaves).reshape((N,))
     lengths = [len(x.values) for x in space_leaves]
-    lengths = jnp.array(lengths, dtype=idx_arr.dtype)  # shape (N,)
+    lengths = jnp.array(lengths, dtype=idx_arr.dtype)
     pointer = jnp.asarray(state.idx_pointer)
     out_of_bounds = pointer >= N
     cur_idx = jax.lax.dynamic_slice(idx_arr, (pointer,), (1,))[0]
@@ -205,11 +197,19 @@ def update_state(state: GridSearchState) -> GridSearchState:
     def handle_in_bounds():
         def inc_pointer():
             new_pointer = pointer + 1
-            return state.replace(idx_pointer=jnp.asarray(new_pointer))
+            new_idx_arr = idx_arr.at[pointer].set(0)
+            new_space_idx = jax.tree_util.tree_unflatten(
+                idx_treedef, new_idx_arr.reshape((N,))
+            )
+            return state.replace(
+                idx_pointer=jnp.asarray(new_pointer), space_idx=new_space_idx
+            )
 
         def inc_idx():
             new_idx_arr = idx_arr.at[pointer].add(1)
-            new_space_idx = jax.tree_util.tree_unflatten(idx_treedef, new_idx_arr)
+            new_space_idx = jax.tree_util.tree_unflatten(
+                idx_treedef, new_idx_arr.reshape((N,))
+            )
             return state.replace(space_idx=new_space_idx)
 
         is_full = cur_idx == max_idx_for_pointer

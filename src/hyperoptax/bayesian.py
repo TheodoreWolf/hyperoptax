@@ -4,6 +4,7 @@ from typing import Callable, Optional
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
+from flax import struct
 
 from hyperoptax.acquisition import UCB, BaseAcquisition
 from hyperoptax.base import BaseOptimizer
@@ -12,6 +13,19 @@ from hyperoptax.spaces import BaseSpace
 
 logger = logging.getLogger(__name__)
 
+
+class OptimizerState(struct.PyTreeNode):
+    X_seen: jax.Array
+    y_seen: jax.Array
+    kernel: jax.Array
+    seen_idx: jax.Array
+    results: jax.Array
+    max_idxs: jax.Array
+    n_iterations: int
+    n_vmap: int
+    n_pmap: int
+    n_seeds_per_run: int
+    maximize: bool
 
 class BayesianOptimizer(BaseOptimizer):
     def __init__(
@@ -43,6 +57,7 @@ class BayesianOptimizer(BaseOptimizer):
                 f"points in the domain={self.domain.shape[0]},"
                 "this will result in a full grid search."
             )
+            n_iterations = self.domain.shape[0]
 
         # Number of batches we need to cover all requested iterations
         n_batches = (n_iterations + n_vmap - 1) // n_vmap

@@ -6,6 +6,7 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flax import struct
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,18 @@ class BaseOptimizer:
         # in future versions we want to sample points from the domain
         grid = jnp.array(jnp.meshgrid(*[space.array for space in domain.values()]))
         self.domain = grid.reshape(n_args, n_points).T
+
+    def optimize_no_jit(
+        self,
+        n_iterations: int = -1,
+        n_vmap: int = 1,
+        n_pmap: int = 1,
+        n_seeds_per_run: int = 1,
+        maximize: bool = True,
+        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+    ):
+        # init state array
+        pass
 
     def optimize(
         self,
@@ -145,3 +158,47 @@ class BaseOptimizer:
             "target": self.results[1].min(),
             "params": self.results[0][self.results[1].argmin()].flatten(),
         }
+
+
+@struct.dataclass
+class OptimizerState:
+    func: Callable
+    key: jax.random.PRNGKey
+    space: struct.PyTreeNode
+
+
+class Optimizer:
+    @classmethod
+    def init(cls, space, func, key, n_seeds: int = 1) -> OptimizerState:
+        func = jax.vmap(func, in_axes=(0,))
+        return OptimizerState(func=func, key=key, space=space)
+
+    @classmethod
+    def optimize(
+        cls, state: OptimizerState, n_iterations: int
+    ) -> tuple[OptimizerState, jax.Array]:
+        state, results = cls._optimize(state, n_iterations)
+        return state, results
+
+    @classmethod
+    def _optimize(
+        cls, state: OptimizerState, n_iterations: int
+    ) -> tuple[OptimizerState, jax.Array]:
+        raise NotImplementedError
+
+
+class RandomSearch:
+    @classmethod
+    def _optimize(
+        cls, state: OptimizerState, n_iterations: int
+    ) -> tuple[OptimizerState, jax.Array]:
+        def _step(state: OptimizerState) -> tuple[OptimizerState, jax.Array]:
+            next_params = jax.tree.map(
+                lambda x: x.sample(jax.random.split(state.key)), state.space
+            )
+            results = state.func(**next_params)
+            state = state.replace(key=jax.random.split(state.key))
+            return state, results
+
+        state, results = jax.lax.scan(_step, state, jnp.arange(n_iterations))
+        return state, results
