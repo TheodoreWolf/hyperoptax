@@ -1,57 +1,88 @@
 import jax.numpy as jnp
 import pytest
 
-from hyperoptax.grid import GridSearch
-from hyperoptax.spaces import LinearSpace
+from hyperoptax import spaces as sp
+from hyperoptax.grid import GridSearch, GridSearchState
 
 
-class TestGridSearch:
-    def setup_method(self):
-        self.domain_1d = {"x": LinearSpace(-1, 1, 101)}
-        self.f_1d = lambda x: -(x**2) + 10
-        self.domain_2d = self.domain_1d | {"y": LinearSpace(-2, 2, 101)}
-        self.f_2d = lambda x, y: -(x**2 + y**2) + 10
+class TestGridSearchInit:
+    def test_init_discrete_1d(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space)
+        assert isinstance(state, GridSearchState)
+        assert state.space_idx == 0
+        assert not state.random_shuffle
 
-    def test_1d_grid_search(self):
-        grid_search = GridSearch(self.domain_1d, self.f_1d)
-        result = grid_search.optimize(n_iterations=-1, n_vmap=1)
-        assert jnp.allclose(result, jnp.array([0]))
+    def test_init_discrete_2d(self):
+        space = {"x": sp.DiscreteSpace([0, 1, 2]), "y": sp.DiscreteSpace([0.0, 0.5])}
+        state = GridSearch.init(space)
+        assert isinstance(state, GridSearchState)
+        assert state.space_idx == 0
 
-    def test_2d_grid_search(self):
-        grid_search = GridSearch(self.domain_2d, self.f_2d)
-        result = grid_search.optimize(n_iterations=-1, n_vmap=1)
-        assert jnp.allclose(result, jnp.array([0, 0]))
+    def test_init_random_shuffle(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space, random_shuffle=True)
+        assert state.random_shuffle
 
-    def test_mismatched_domain_and_function(self):
-        with pytest.raises(AssertionError):
-            GridSearch(self.domain_1d, self.f_2d)
+    def test_init_raises_for_continuous_space(self):
+        space = {"x": sp.LinearSpace(0.0, 1.0)}
+        with pytest.raises(ValueError):
+            GridSearch.init(space)
 
-    def test_n_parallel_10(self):
-        grid_search = GridSearch(self.domain_1d, self.f_1d)
-        result = grid_search.optimize(n_vmap=10)
-        assert jnp.allclose(result, jnp.array([0]))
+    def test_init_raises_for_mixed_space(self):
+        space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.LinearSpace(0.0, 1.0)}
+        with pytest.raises(ValueError):
+            GridSearch.init(space)
 
-    def test_jit(self):
-        grid_search = GridSearch(self.domain_1d, self.f_1d)
-        result = grid_search.optimize(n_iterations=1000, n_vmap=10, jit=True)
-        assert jnp.allclose(result, jnp.array([0]))
 
-    def test_n_iterations_not_multiple_of_parallel(self):
-        grid_search = GridSearch(self.domain_1d, self.f_1d)
-        result = grid_search.optimize(n_iterations=100, n_vmap=7)
-        assert jnp.allclose(result, jnp.array([0]))
+class TestGridSearchUpdateState:
+    def test_update_state_increments_idx(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space)
+        assert state.space_idx == 0
+        state = GridSearch.update_state(state)
+        assert state.space_idx == 1
 
-    def test_domain_is_shuffled_when_random_search(self):
-        random_search = GridSearch(self.domain_1d, self.f_1d, random_search=True)
-        assert random_search.domain.shape[0] == len(self.domain_1d["x"])
-        assert not jnp.allclose(random_search.domain, self.domain_1d["x"].array)
+    def test_update_state_does_not_mutate(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space)
+        new_state = GridSearch.update_state(state)
+        assert state.space_idx == 0
+        assert new_state.space_idx == 1
 
-    def test_pmap_grid_search(self):
-        grid_search = GridSearch(self.domain_2d, self.f_2d)
-        result = grid_search.optimize(n_iterations=10000, n_vmap=4, n_pmap=4)
-        assert jnp.allclose(result, jnp.array([0, 0]))
+    def test_update_state_increments_repeatedly(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space)
+        for i in range(5):
+            assert state.space_idx == i
+            state = GridSearch.update_state(state)
 
-    def test_sharded_grid_search_with_too_many_shards(self):
-        grid_search = GridSearch(self.domain_2d, self.f_2d)
-        with pytest.raises(AssertionError):
-            grid_search.optimize(n_iterations=100, n_vmap=4, n_pmap=5)
+
+class TestGridSearchSpaceFlat:
+    def test_flat_space_size_is_product_of_dim_sizes(self):
+        space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
+        state = GridSearch.init(space)
+        assert state.space_flat.shape[0] == 6 # 2 * 3 = 6
+        assert state.space_flat.shape[1] == 2  # 2 params
+
+
+class TestGridSearchGetNextParams:
+    def test_get_next_params_first_index(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space)
+        params = GridSearch.get_next_params(state)
+        assert params is not None
+
+    def test_get_next_params_changes_after_update(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state = GridSearch.init(space)
+        params_0 = GridSearch.get_next_params(state)
+        state = GridSearch.update_state(state)
+        params_1 = GridSearch.get_next_params(state)
+        assert not jnp.allclose(params_0["x"], params_1["x"])
+
+    def test_get_next_params_2d_grid(self):
+        space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
+        state = GridSearch.init(space)
+        params = GridSearch.get_next_params(state)
+        assert params is not None

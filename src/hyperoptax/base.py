@@ -1,204 +1,65 @@
-import inspect
-import logging
-from functools import partial
 from typing import Callable
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from flax import struct
-
-logger = logging.getLogger(__name__)
-
-
-# TODO: use existing results if they exist
-# TODO: add support for keys
-# TODO: implement callback/wandb logging
-class BaseOptimizer:
-    """
-    Base class for optimizers/grid search.
-
-    Args:
-        domain (dict[str, jax.Array]): The domain of the optimizer.
-        f (Callable): The function to optimize.
-        callback (Callable): A callback function to call after each iteration.
-    """
-
-    def __init__(
-        self,
-        domain: dict[str, jax.Array],
-        f: Callable,
-        callback: Callable = lambda x: None,
-    ):
-        self.f = f
-        self.callback = callback
-        self.results = None
-
-        n_args = len(inspect.signature(f).parameters)
-        n_points = np.prod([len(domain[k]) for k in domain])
-        if n_points > 1e6:
-            # TODO: what do if the matrix is too large?
-            logger.warning(
-                f"Creating a {n_points}x{n_args} grid, this may be too large!"
-            )
-
-        assert n_args == len(domain), (
-            f"Function must have the same number of arguments as the domain, "
-            f"got {n_args} arguments and {len(domain)} domains."
-        )
-        # we make a grid of all the points in the domain
-        # in future versions we want to sample points from the domain
-        grid = jnp.array(jnp.meshgrid(*[space.array for space in domain.values()]))
-        self.domain = grid.reshape(n_args, n_points).T
-
-    def optimize_no_jit(
-        self,
-        n_iterations: int = -1,
-        n_vmap: int = 1,
-        n_pmap: int = 1,
-        n_seeds_per_run: int = 1,
-        maximize: bool = True,
-        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-    ):
-        # init state array
-        pass
-
-    def optimize(
-        self,
-        n_iterations: int = -1,
-        n_vmap: int = 1,
-        n_pmap: int = 1,
-        maximize: bool = True,
-        jit: bool = False,
-        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-    ):
-        """
-        Optimize the function.
-        Note: pmap doesn't work as expected for the Bayesian optimizer... yet.
-
-        Args:
-            n_iterations (int): The number of iterations to run.
-            n_vmap (int): The number of points to evaluate in parallel on the
-                same device.
-            n_pmap (int): The number of points to evaluate in parallel on different
-                devices.
-            maximize (bool): Whether to maximize or minimize the function.
-            jit (bool): Whether to jit the function.
-            key (jax.random.PRNGKey): The random key to use for sampling.
-
-        """
-        if n_iterations == -1:
-            n_iterations = self.domain.shape[0]
-
-        if maximize:
-            self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
-        else:
-            self.map_f = jax.vmap(
-                lambda *args: -self.f(*args), in_axes=(0,) * self.domain.shape[1]
-            )
-
-        if n_pmap > 1:
-            assert n_iterations % n_pmap == 0, (
-                "n_iterations must be divisible by n_pmap"
-            )
-            assert n_pmap == jax.local_device_count(), (
-                "n_pmap must be equal to the number of devices"
-            )
-            # TODO: fix this for the bayesian optimizer
-            domains = jnp.array(jnp.array_split(self.domain[:n_iterations], n_pmap))
-            n_iterations = n_iterations // n_pmap
-            X_seen, y_seen = jax.pmap(
-                partial(self.search, n_iterations=n_iterations, n_vmap=n_vmap, key=key),
-            )(domain=domains)
-
-        # mostly for debugging purposes
-        elif jit:
-            X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
-                n_iterations, n_vmap, key
-            )
-        else:
-            X_seen, y_seen = self.search(n_iterations, n_vmap, key)
-
-        max_idxs = jnp.where(y_seen == y_seen.max())
-
-        if not maximize:
-            y_seen = -y_seen
-
-        self.results = (X_seen, y_seen)
-
-        return X_seen[max_idxs].squeeze()
-
-    def search(self, n_iterations: int, n_parallel: int, key: jax.random.PRNGKey):
-        raise NotImplementedError
-
-    @property
-    def max(self) -> dict[str, jax.Array]:
-        """
-        Get the maximum value and parameters of the function.
-
-        Returns:
-            dict[str, jax.Array]: A dictionary with the maximum value and parameters.
-        """
-        assert self.results is not None, "No results found, run optimize first."
-        return {
-            "target": self.results[1].max(),
-            "params": self.results[0][self.results[1].argmax()].flatten(),
-        }
-
-    @property
-    def min(self) -> dict[str, jax.Array]:
-        """
-        Get the minimum value and parameters of the function.
-
-        Returns:
-            dict[str, jax.Array]: A dictionary with the minimum value and parameters.
-        """
-        assert self.results is not None, "No results found, run optimize first."
-        return {
-            "target": self.results[1].min(),
-            "params": self.results[0][self.results[1].argmin()].flatten(),
-        }
 
 
 @struct.dataclass
 class OptimizerState:
-    func: Callable
-    key: jax.random.PRNGKey
     space: struct.PyTreeNode
 
 
-class Optimizer:
+class Optimizer(struct.PyTreeNode):
     @classmethod
-    def init(cls, space, func, key, n_seeds: int = 1) -> OptimizerState:
-        func = jax.vmap(func, in_axes=(0,))
-        return OptimizerState(func=func, key=key, space=space)
+    def init(cls, space, **kwargs) -> OptimizerState:
+        return OptimizerState(space=space)
+
 
     @classmethod
     def optimize(
-        cls, state: OptimizerState, n_iterations: int
+        cls,
+        state: OptimizerState,
+        key: jax.random.PRNGKey,
+        func: Callable,
+        n_iterations: int,
     ) -> tuple[OptimizerState, jax.Array]:
-        state, results = cls._optimize(state, n_iterations)
+        """
+        High Level API for optimizing a function over a space.
+        Not recommended if you want to do fancy things
+        with parallel computation.
+        """
+
+        def _step(carry, _):
+            state, key = carry
+            key, subkey = jax.random.split(key)
+            next_params = cls.get_next_params(state, subkey)
+            results = func(**next_params)
+            state = cls.update_state(state, subkey, results)
+            return (state, key), results
+
+        (state, _), results = jax.lax.scan(_step, (state, key), None, length=n_iterations)
         return state, results
 
     @classmethod
-    def _optimize(
-        cls, state: OptimizerState, n_iterations: int
-    ) -> tuple[OptimizerState, jax.Array]:
+    def update_state(
+        cls,
+        state: OptimizerState,
+        key: jax.random.PRNGKey,
+        results: jax.Array,
+    ) -> OptimizerState:
+        """
+        Updates the optimizer state based on the results of the function.
+        """
         raise NotImplementedError
 
-
-class RandomSearch:
     @classmethod
-    def _optimize(
-        cls, state: OptimizerState, n_iterations: int
-    ) -> tuple[OptimizerState, jax.Array]:
-        def _step(state: OptimizerState) -> tuple[OptimizerState, jax.Array]:
-            next_params = jax.tree.map(
-                lambda x: x.sample(jax.random.split(state.key)), state.space
-            )
-            results = state.func(**next_params)
-            state = state.replace(key=jax.random.split(state.key))
-            return state, results
-
-        state, results = jax.lax.scan(_step, state, jnp.arange(n_iterations))
-        return state, results
+    def get_next_params(
+        cls,
+        state: OptimizerState,
+        key: jax.random.PRNGKey,
+    ) -> struct.PyTreeNode:
+        """
+        Gets the next parameters to sample from the space.
+        """
+        raise NotImplementedError
