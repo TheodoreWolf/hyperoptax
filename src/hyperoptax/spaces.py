@@ -35,12 +35,6 @@ class LinearSpace(Space):
         )
 
 
-# TODO: to implement grid search extract the leaves and make a matrix
-# of combinations/iterate indices dynamically]
-
-
-# Something like pytree that points to the idx
-# and is just iterated by +1 each iter
 class DiscreteSpace(Space):
     values: str = struct.field(pytree_node=False)
 

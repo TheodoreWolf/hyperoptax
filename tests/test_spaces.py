@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from src.hyperoptax import spaces as sp
+from hyperoptax import spaces as sp
 
 
 def test_space():

@@ -25,7 +25,7 @@ class BaseKernel(ABC):
     """Abstract base class for positive-definite kernels."""
 
     @abstractmethod
-    def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
+    def __call__(self, x: jax.Array, y: jax.Array, length_scale=None) -> jax.Array:
         raise NotImplementedError
 
 
@@ -36,8 +36,9 @@ class RBF(BaseKernel):
     def __init__(self, length_scale: float = 1.0):
         self.length_scale = length_scale
 
-    def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
-        return jnp.exp(-(cdist(x, y) ** 2) / (2 * self.length_scale**2))
+    def __call__(self, x: jax.Array, y: jax.Array, length_scale=None) -> jax.Array:
+        ls = self.length_scale if length_scale is None else length_scale
+        return jnp.exp(-(cdist(x, y) ** 2) / (2 * ls**2))
 
     def diag(self, x: jax.Array) -> jax.Array:
         return jnp.ones(x.shape[0])
@@ -58,8 +59,9 @@ class Matern(RBF):
         self.length_scale = length_scale
         self.nu = nu  # controls smoothness of the kernel, lower is less smooth
 
-    def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
-        dists = cdist(x / self.length_scale, y / self.length_scale)
+    def __call__(self, x: jax.Array, y: jax.Array, length_scale=None) -> jax.Array:
+        ls = self.length_scale if length_scale is None else length_scale
+        dists = cdist(x / ls, y / ls)
         if self.nu == 0.5:
             return jnp.exp(-dists)
         elif self.nu == 1.5:
