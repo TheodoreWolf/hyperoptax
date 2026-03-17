@@ -1,7 +1,11 @@
 import jax
 import jax.numpy as jnp
+import pytest
 
-from hyperoptax.acquisition import EI, PI, UCB
+from hyperoptax.acquisition import (
+    EI, PI, UCB, BaseAcquisition,
+    BaseLiar, MeanLiar, SampleLiar, UCBLiar, ConstantLiar,
+)
 
 
 class TestGetArgmax:
@@ -65,17 +69,6 @@ class TestUCB:
         max_val = jax.jit(ucb.get_max)(mean, std, X, seen_mask)
         assert jnp.allclose(max_val, jnp.array([0.0, 0.0]))
 
-    def test_get_stochastic_argmax_when_stochastic_multiplier_is_1(self):
-        ucb = UCB(kappa=2.0, stochastic_multiplier=1)
-        mean = jnp.array([1.0, 0.0, 0.0])
-        std = jnp.array([0.1, 0.1, 0.2])
-        seen_mask = jnp.array([True, False, False])
-        key = jax.random.PRNGKey(0)
-
-        # when stochastic_multiplier is 1, the two methods are equivalent
-        argmax_val = ucb.get_argmax(mean, std, seen_mask, 1)
-        stochastic_argmax_val = ucb.get_stochastic_argmax(mean, std, seen_mask, 1, key)
-        assert jnp.allclose(argmax_val, stochastic_argmax_val)
 
 
 class TestEI:
@@ -126,7 +119,7 @@ class TestPI:
         assert float(vals[0]) < 0.5
 
     def test_pi_excludes_seen(self):
-        pi = PI(xi=0.01, stochastic_multiplier=1)
+        pi = PI(xi=0.01)
         mean = jnp.array([1.0, 0.0, 0.0])
         std = jnp.array([0.1, 0.1, 0.2])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0], [0.0, 0.0]])
@@ -141,3 +134,81 @@ class TestPI:
         std = jnp.array([0.3, 0.3])
         vals = jax.jit(pi)(mean, std)
         assert vals.shape == (2,)
+
+
+class TestBaseAcquisition:
+    def test_call_raises_not_implemented(self):
+        acq = BaseAcquisition()
+        with pytest.raises(NotImplementedError):
+            acq(jnp.array([1.0]), jnp.array([0.1]))
+
+    def test_ei_uses_y_max_from_mean_when_none(self):
+        # EI with y_max=None uses max(mean) as reference
+        ei = EI(xi=0.0)
+        mean = jnp.array([2.0, 1.0])
+        std = jnp.array([0.5, 0.5])
+        vals_auto = ei(mean, std, y_max=None)
+        vals_explicit = ei(mean, std, y_max=jnp.max(mean))
+        assert jnp.allclose(vals_auto, vals_explicit)
+
+    def test_pi_uses_y_max_from_mean_when_none(self):
+        pi = PI(xi=0.0)
+        mean = jnp.array([2.0, 1.0])
+        std = jnp.array([0.5, 0.5])
+        vals_auto = pi(mean, std, y_max=None)
+        vals_explicit = pi(mean, std, y_max=jnp.max(mean))
+        assert jnp.allclose(vals_auto, vals_explicit)
+
+
+class TestLiarStrategies:
+    def setup_method(self):
+        self.mean = jnp.array([1.5])
+        self.std = jnp.array([0.3])
+        self.key = jax.random.PRNGKey(0)
+        self.y_max = jnp.array(1.0)
+
+    def test_mean_liar_returns_mean(self):
+        liar = MeanLiar()
+        out = liar(self.mean, self.std, self.key, self.y_max)
+        assert jnp.allclose(out, self.mean[0])
+
+    def test_sample_liar_is_stochastic(self):
+        liar = SampleLiar()
+        key1, key2 = jax.random.split(self.key)
+        out1 = liar(self.mean, self.std, key1, self.y_max)
+        out2 = liar(self.mean, self.std, key2, self.y_max)
+        assert not jnp.allclose(out1, out2)
+
+    def test_sample_liar_mean_is_posterior_mean(self):
+        liar = SampleLiar()
+        keys = jax.random.split(self.key, 5000)
+        samples = jnp.array([liar(self.mean, self.std, k, self.y_max) for k in keys])
+        assert jnp.abs(jnp.mean(samples) - self.mean[0]) < 0.05
+
+    def test_ucb_liar_formula(self):
+        kappa = 3.0
+        liar = UCBLiar(kappa=kappa)
+        out = liar(self.mean, self.std, self.key, self.y_max)
+        assert jnp.allclose(out, self.mean[0] + kappa * self.std[0])
+
+    def test_constant_liar_uses_y_max(self):
+        liar = ConstantLiar()
+        out = liar(self.mean, self.std, self.key, self.y_max)
+        assert jnp.allclose(out, self.y_max)
+
+    def test_constant_liar_fixed_value(self):
+        liar = ConstantLiar(value=42.0)
+        out = liar(self.mean, self.std, self.key, self.y_max)
+        assert jnp.allclose(out, jnp.array(42.0))
+
+    def test_constant_liar_fixed_value_ignores_y_max(self):
+        liar = ConstantLiar(value=42.0)
+        out1 = liar(self.mean, self.std, self.key, jnp.array(0.0))
+        out2 = liar(self.mean, self.std, self.key, jnp.array(999.0))
+        assert jnp.allclose(out1, out2)
+
+    def test_all_liars_return_scalar(self):
+        liars = [MeanLiar(), SampleLiar(), UCBLiar(), ConstantLiar(), ConstantLiar(value=1.0)]
+        for liar in liars:
+            out = liar(self.mean, self.std, self.key, self.y_max)
+            assert out.ndim == 0, f"{type(liar).__name__} did not return scalar"

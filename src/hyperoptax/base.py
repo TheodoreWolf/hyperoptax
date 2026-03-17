@@ -41,6 +41,8 @@ class OptimizerState:
 
 
 class Optimizer:
+    n_parallel: int = 1
+
     @classmethod
     def init(cls, space, **kwargs) -> OptimizerState:
         return OptimizerState(space=space), cls()
@@ -48,32 +50,39 @@ class Optimizer:
     def optimize(
         self,
         state: OptimizerState,
-        key: jax.random.PRNGKey,
-        func: Callable,
+        key: jax.Array,  # ()  PRNG key
+        func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
     ) -> tuple[OptimizerState, tuple[struct.PyTreeNode, jax.Array]]:
         """
         High Level API for optimizing a function over a space.
         Not recommended if you want to do fancy things
         with parallel computation.
+
+        ``func`` must return a scalar (``()`` shape). If your function returns
+        shape ``(1,)``, call ``.squeeze()`` inside ``func`` before returning.
         """
         _validate_func(func)
         params_hist, results_hist = [], []
         params, results = None, None
         for _ in range(n_iterations):
-            key, key_get, key_func, key_update = jax.random.split(key, 4)
+            key, key_get, key_funcs, key_update = jax.random.split(key, 4)
             params = self.get_next_params(state, key_get, params, results)
-            results = func(key_func, params)
-            state = self.update_state(state, key_update, results, params)
+            # params:        pytree, each leaf shape (n_parallel, ...)
+            # func_keys:     (n_parallel, 2)
+            # batch_results: (n_parallel,)
+            func_keys = jax.random.split(key_funcs, self.n_parallel)
+            batch_results = jax.vmap(func)(func_keys, params)  # (n_parallel,)
+            state = self.update_state(state, key_update, batch_results, params)
             params_hist.append(params)
-            results_hist.append(results)
+            results_hist.append(batch_results)
         return state, (params_hist, results_hist)
 
     def optimize_scan(
         self,
         state: OptimizerState,
-        key: jax.random.PRNGKey,
-        func: Callable,
+        key: jax.Array,  # ()  PRNG key
+        func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
     ) -> tuple[OptimizerState, tuple[struct.PyTreeNode, jax.Array]]:
         """
@@ -81,28 +90,32 @@ class Optimizer:
 
         Requires func to be JAX-traceable (jit-compilable). Returns stacked
         arrays instead of lists: params_hist is a pytree where each leaf has
-        a leading n_iterations dimension, and results_hist is a stacked array
-        of shape (n_iterations, ...).
+        shape (n_iterations, n_parallel, ...), and results_hist has shape
+        (n_iterations, n_parallel).
+
+        ``func`` must return a scalar (``()`` shape). If your function returns
+        shape ``(1,)``, call ``.squeeze()`` inside ``func`` before returning.
         """
         _validate_func(func)
         # Run one step outside scan to determine pytree structure and result shape.
-        key, key_get, key_func, key_update = jax.random.split(key, 4)
+        key, key_get, key_funcs, key_update = jax.random.split(key, 4)
         params0 = self.get_next_params(state, key_get, None, None)
-        results0 = func(key_func, params0)
+        # params0:  pytree, each leaf shape (n_parallel, ...)
+        # results0: (n_parallel,)
+        func_keys0 = jax.random.split(key_funcs, self.n_parallel)
+        results0 = jax.vmap(func)(func_keys0, params0)  # (n_parallel,)
         state = self.update_state(state, key_update, results0, params0)
         # Save step-0 outputs before scan overwrites these names via carry.
         first_params, first_results = params0, results0
 
         def step(carry, _):
             state, key, params, results = carry
-            key, key_get, key_func, key_update = jax.random.split(key, 4)
+            key, key_get, key_funcs, key_update = jax.random.split(key, 4)
             params = self.get_next_params(state, key_get, params, results)
-            results = func(key_func, params)
-            state = self.update_state(state, key_update, results, params)
-            return (state, key, params, results), (
-                params,
-                results,
-            )
+            func_keys = jax.random.split(key_funcs, self.n_parallel)
+            batch_results = jax.vmap(func)(func_keys, params)  # (n_parallel,)
+            state = self.update_state(state, key_update, batch_results, params)
+            return (state, key, params, batch_results), (params, batch_results)
 
         (final_state, _, _, _), (params_hist, results_hist) = jax.lax.scan(
             step,
@@ -141,6 +154,7 @@ class Optimizer:
     ) -> struct.PyTreeNode:
         """
         Gets the next parameters to sample from the space.
+        Returns a batched pytree where every leaf has shape (n_parallel, ...).
         params and results are the previous iteration's values (None on first call).
         """
         raise NotImplementedError

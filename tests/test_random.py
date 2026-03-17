@@ -25,6 +25,7 @@ class TestRandomSearchGetNextParams:
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = RandomSearch.init(space)
         params = optimizer.get_next_params(state, jax.random.PRNGKey(0))
+        # n_parallel=1: params["x"] has shape (1,)
         assert 0.0 <= float(params["x"][0]) <= 1.0
 
     def test_different_keys_give_different_params(self):
@@ -62,13 +63,25 @@ class TestRandomSearchGetNextParams:
         params = optimizer.get_next_params(state, jax.random.PRNGKey(0))
         assert 1e-4 <= float(params["lr"][0]) <= 1e-1
 
+    def test_n_parallel_batch_shape(self):
+        space = {"lr": sp.LinearSpace(1e-4, 1e-1)}
+        state, optimizer = RandomSearch.init(space, n_parallel=3)
+        params = optimizer.get_next_params(state, jax.random.PRNGKey(0))
+        assert params["lr"].shape == (3,)
+
+    def test_n_parallel_values_within_bounds(self):
+        space = {"x": sp.LinearSpace(0.0, 1.0)}
+        state, optimizer = RandomSearch.init(space, n_parallel=5)
+        params = optimizer.get_next_params(state, jax.random.PRNGKey(0))
+        assert jnp.all(params["x"] >= 0.0) and jnp.all(params["x"] <= 1.0)
+
 
 class TestRandomSearchUpdateState:
     def test_update_state_is_memoryless(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = RandomSearch.init(space)
         key = jax.random.PRNGKey(0)
-        new_state = optimizer.update_state(state, key, jnp.array(0.5))
+        new_state = optimizer.update_state(state, key, jnp.array([0.5]))
         assert new_state.space is state.space
 
     def test_update_state_repeated_calls_unchanged(self):
@@ -76,7 +89,7 @@ class TestRandomSearchUpdateState:
         state, optimizer = RandomSearch.init(space)
         key = jax.random.PRNGKey(0)
         for _ in range(5):
-            state = optimizer.update_state(state, key, jnp.array(1.0))
+            state = optimizer.update_state(state, key, jnp.array([1.0]))
         assert state.space == RandomSearch.init(space)[0].space
 
 
@@ -84,7 +97,8 @@ class TestOptimizeScan:
     def _setup(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = RandomSearch.init(space)
-        func = lambda key, config: config["x"][0] ** 2
+        # func receives a scalar config["x"] (from _index_batch)
+        func = lambda key, config: config["x"] ** 2
         return state, optimizer, func
 
     def test_history_length_matches_n_iterations(self):
@@ -116,14 +130,15 @@ class TestOptimizeScan:
         _, (params_hist, results_hist) = optimizer.optimize_scan(
             state, jax.random.PRNGKey(0), func, n_iterations=5
         )
-        expected = jax.vmap(lambda x: x**2)(params_hist["x"].squeeze())
-        assert jnp.allclose(results_hist, expected)
+        # params_hist["x"] shape: (5, 1); results_hist shape: (5, 1)
+        expected = params_hist["x"].squeeze() ** 2
+        assert jnp.allclose(results_hist.squeeze(), expected)
 
     def test_matches_optimize_output(self):
         """optimize_scan and optimize should produce the same sequence of params."""
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         key = jax.random.PRNGKey(7)
-        func = lambda key, config: config["x"][0]
+        func = lambda key, config: config["x"]
 
         state1, opt1 = RandomSearch.init(space)
         state2, opt2 = RandomSearch.init(space)
@@ -131,13 +146,14 @@ class TestOptimizeScan:
         _, (params_list, _) = opt1.optimize(state1, key, func, n_iterations=4)
         _, (params_stacked, _) = opt2.optimize_scan(state2, key, func, n_iterations=4)
 
+        # params_list items have shape (1,); params_stacked["x"] has shape (4, 1)
         expected = jnp.array([p["x"][0] for p in params_list])
         assert jnp.allclose(params_stacked["x"].squeeze(), expected)
 
     def test_nested_space(self):
         space = {"lr": sp.LinearSpace(1e-4, 1e-1), "reg": {"l1": sp.LinearSpace(0.0, 1.0)}}
         state, optimizer = RandomSearch.init(space)
-        func = lambda key, config: config["lr"][0] + config["reg"]["l1"][0]
+        func = lambda key, config: config["lr"] + config["reg"]["l1"]
         _, (params_hist, results_hist) = optimizer.optimize_scan(
             state, jax.random.PRNGKey(0), func, n_iterations=6
         )
@@ -153,3 +169,14 @@ class TestOptimizeScan:
         )
         assert params_hist["x"].shape[0] == n
         assert results_hist.shape[0] == n
+
+    def test_n_parallel_optimize_scan(self):
+        space = {"x": sp.LinearSpace(0.0, 1.0)}
+        state, optimizer = RandomSearch.init(space, n_parallel=3)
+        func = lambda key, config: config["x"] ** 2
+        _, (params_hist, results_hist) = optimizer.optimize_scan(
+            state, jax.random.PRNGKey(0), func, n_iterations=4
+        )
+        # params_hist["x"]: (4, 3); results_hist: (4, 3)
+        assert params_hist["x"].shape == (4, 3)
+        assert results_hist.shape == (4, 3)

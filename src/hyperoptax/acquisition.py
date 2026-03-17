@@ -4,16 +4,7 @@ from jax.scipy.stats import norm
 
 
 class BaseAcquisition:
-    """
-    Base class for acquisition functions.
-
-    Args:
-        n_samples: The number of points to sample
-        randomly to avoid selecting points that are very close to each other.
-    """
-
-    def __init__(self, n_samples: int = 1):
-        self.n_samples = n_samples
+    """Base class for acquisition functions."""
 
     def __call__(self, mean: jax.Array, std: jax.Array, y_max=None):
         """
@@ -49,54 +40,7 @@ class BaseAcquisition:
     def get_argmax(
         self, mean: jax.Array, std: jax.Array, seen_mask: jax.Array, n_points: int = 1
     ):
-        """
-        Get the indices of the points with the highest acquisition values.
-
-        Args:
-            mean (N,): The mean of the Gaussian process.
-            std (N,): The standard deviation of the Gaussian process.
-            seen_mask (N,): Boolean mask, True for points already evaluated.
-            n_points (int): The number of points to select.
-
-        Returns:
-            (n_points,): The indices of the points with the highest acquisition values.
-        """
         return self.sort_acq_vals(mean, std, seen_mask)[-n_points:]
-
-    def get_stochastic_argmax(
-        self,
-        mean: jax.Array,
-        std: jax.Array,
-        seen_mask: jax.Array,
-        n_points: int,
-        key: jax.random.PRNGKey,
-    ):
-        """
-        Get a random sample of indices of points with high acquisition values.
-        This is to avoid picking points that are very close to each other.
-        When n_samples is 1, this method is equivalent to get_argmax.
-
-        Args:
-            mean (N,): The mean of the Gaussian process.
-            std (N,): The standard deviation of the Gaussian process.
-            seen_mask (N,): Boolean mask, True for points already evaluated.
-            n_points (int): The number of points to select.
-            key (jax.random.PRNGKey): The random key to use for sampling.
-
-        Returns:
-            (n_points,): A random sample of indices of points with high
-            acquisition values.
-
-        """
-        # We sample points randomly from the top n_points * n_samples
-        # to avoid selecting points that are very close to each other.
-        sample_idx = jax.random.choice(
-            key,
-            jnp.arange(n_points * self.n_samples),
-            (n_points,),
-            replace=False,
-        )
-        return self.sort_acq_vals(mean, std, seen_mask)[::-1][sample_idx]
 
     def get_max(
         self, mean: jax.Array, std: jax.Array, X: jax.Array, seen_mask: jax.Array
@@ -117,12 +61,9 @@ class BaseAcquisition:
 
 
 class UCB(BaseAcquisition):
-    """
-    Upper Confidence Bound acquisition function.
-    """
+    """Upper Confidence Bound acquisition function."""
 
-    def __init__(self, kappa: float = 2.0, n_samples: int = 2):
-        super().__init__(n_samples)
+    def __init__(self, kappa: float = 2.0):
         self.kappa = kappa
 
     def __call__(self, mean: jax.Array, std: jax.Array, y_max=None):
@@ -130,15 +71,15 @@ class UCB(BaseAcquisition):
 
 
 class EI(BaseAcquisition):
-    """
-    Expected Improvement acquisition function.
-    """
+    """Expected Improvement acquisition function."""
 
-    def __init__(self, xi: float = 0.01, n_samples: int = 2):
-        super().__init__(n_samples)
+    def __init__(self, xi: float = 0.01):
         self.xi = xi
 
     def __call__(self, mean: jax.Array, std: jax.Array, y_max=None):
+        # y_max should be the best observed function value. Falling back to
+        # max(mean) is an approximation suitable for standalone use only —
+        # always pass y_max explicitly when observations are available.
         _y_max = jnp.max(mean) if y_max is None else y_max
         a = mean - self.xi - _y_max
         z = a / std
@@ -146,18 +87,68 @@ class EI(BaseAcquisition):
 
 
 class PI(BaseAcquisition):
-    """
-    Probability of Improvement acquisition function.
-    """
+    """Probability of Improvement acquisition function."""
 
-    def __init__(self, xi: float = 0.01, n_samples: int = 2):
-        super().__init__(n_samples)
+    def __init__(self, xi: float = 0.01):
         self.xi = xi
 
     def __call__(self, mean: jax.Array, std: jax.Array, y_max=None):
+        # y_max should be the best observed function value. Falling back to
+        # max(mean) is an approximation suitable for standalone use only —
+        # always pass y_max explicitly when observations are available.
         _y_max = jnp.max(mean) if y_max is None else y_max
         z = (mean - self.xi - _y_max) / std
         return norm.cdf(z)
 
 
-# TODO: ConstantLiar as detailed in https://hal.science/hal-00260579v1/document
+class BaseLiar:
+    """Base class for Kriging Believer hallucination strategies."""
+
+    def __call__(
+        self,
+        mean: jax.Array,
+        std: jax.Array,
+        key: jax.Array,
+        y_max: jax.Array,
+    ) -> jax.Array:
+        raise NotImplementedError
+
+
+class MeanLiar(BaseLiar):
+    """Classical Kriging Believer: hallucinate with GP posterior mean."""
+
+    def __call__(self, mean, std, key, y_max):
+        return mean[0]
+
+
+class SampleLiar(BaseLiar):
+    """Randomized Kriging Believer (RKB, arXiv 2603.01470): hallucinate with a posterior sample."""
+
+    def __call__(self, mean, std, key, y_max):
+        return mean[0] + std[0] * jax.random.normal(key)
+
+
+class UCBLiar(BaseLiar):
+    """Optimistic hallucination: mean + kappa * std."""
+
+    def __init__(self, kappa: float = 2.0):
+        self.kappa = kappa
+
+    def __call__(self, mean, std, key, y_max):
+        return mean[0] + self.kappa * std[0]
+
+
+class ConstantLiar(BaseLiar):
+    """Ginsbourger et al. 2010: hallucinate with y_max or a fixed constant.
+
+    If value is None, uses the current best observed value (y_max).
+    Otherwise uses the fixed value regardless of observations.
+    """
+
+    def __init__(self, value: float | None = None):
+        self.value = value
+
+    def __call__(self, mean, std, key, y_max):
+        if self.value is None:
+            return y_max
+        return jnp.asarray(self.value, dtype=mean.dtype)

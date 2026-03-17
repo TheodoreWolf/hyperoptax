@@ -18,7 +18,10 @@ def cdist(x: jax.Array, y: jax.Array) -> jax.Array:
         A distance matrix of shape ``(N, M)``.
     """
     # jax compatible cdist https://github.com/jax-ml/jax/discussions/15862
-    return jnp.sqrt(jnp.sum((x[:, None] - y[None, :]) ** 2, -1))
+    # Use double-where trick to avoid inf gradients at zero distance (sqrt'(0) = inf).
+    d2 = jnp.sum((x[:, None] - y[None, :]) ** 2, -1)
+    safe_d2 = jnp.where(d2 == 0, jnp.ones_like(d2), d2)
+    return jnp.where(d2 == 0, jnp.zeros_like(d2), jnp.sqrt(safe_d2))
 
 
 class BaseKernel(ABC):

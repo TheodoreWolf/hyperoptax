@@ -1,4 +1,7 @@
+import dataclasses
+
 import jax
+import jax.numpy as jnp
 from flax import struct
 
 from hyperoptax import spaces as sp
@@ -6,7 +9,14 @@ from hyperoptax import utils
 from hyperoptax.base import Optimizer, OptimizerState
 
 
+@dataclasses.dataclass
 class RandomSearch(Optimizer):
+    n_parallel: int = 1
+
+    @classmethod
+    def init(cls, space, **kwargs):
+        return OptimizerState(space=space), cls(**kwargs)
+
     def get_next_params(
         self,
         state: OptimizerState,
@@ -14,15 +24,20 @@ class RandomSearch(Optimizer):
         params=None,
         results=None,
     ) -> struct.PyTreeNode:
-        key, subkey = jax.random.split(key)
-        keys = utils.make_key_tree(state.space, subkey)
-        next_params = jax.tree.map(
-            lambda x, k: x.sample(k),
-            state.space,
-            keys,
-            is_leaf=lambda x: isinstance(x, sp.Space),
-        )
-        return next_params
+        def sample_once(k):
+            subkeys = utils.make_key_tree(state.space, k)
+            sample = jax.tree.map(
+                lambda x, sk: x.sample(sk),
+                state.space,
+                subkeys,
+                is_leaf=lambda x: isinstance(x, sp.Space),
+            )
+            # Squeeze (1,) per-leaf values to scalars for stacking
+            return jax.tree.map(lambda leaf: leaf.squeeze(), sample)
+
+        keys = jax.random.split(key, self.n_parallel)
+        samples = [sample_once(k) for k in keys]
+        return jax.tree.map(lambda *leaves: jnp.stack(leaves), *samples)
 
     def update_state(
         self,

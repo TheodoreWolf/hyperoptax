@@ -38,10 +38,25 @@ class LinearSpace(Space):
 class DiscreteSpace(Space):
     values: str = struct.field(pytree_node=False)
 
+    @property
+    def lower_bound(self) -> float:
+        return float(min(self.values))
+
+    @property
+    def upper_bound(self) -> float:
+        return float(max(self.values))
+
     def sample(self, key: jax.random.PRNGKey) -> float:
         return self.transform(
             jax.random.choice(key, jnp.array(self.values), shape=(1,))
         )
+
+    def transform(self, value) -> jax.Array:
+        vals = jnp.array(self.values)
+        value = jnp.asarray(value)
+        flat = jnp.ravel(value)
+        snapped = vals[jnp.argmin(jnp.abs(vals[:, None] - flat[None, :]), axis=0)]
+        return snapped.reshape(value.shape)
 
 
 class LogSpace(LinearSpace):

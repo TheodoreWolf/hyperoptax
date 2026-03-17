@@ -93,3 +93,35 @@ def test_space_post_init():
         sp.LogSpace(10, 0)
     with pytest.raises(AssertionError):
         sp.LogSpace(0, 10, base=1)
+
+
+def test_space_base_sample_raises():
+    # Space.sample is abstract — subclasses must override it
+    space = sp.Space()
+    with pytest.raises(NotImplementedError):
+        space.sample(jax.random.PRNGKey(0))
+
+
+def test_discrete_space_lower_upper_bound():
+    space = sp.DiscreteSpace([3, 1, 4, 1, 5, 9])
+    assert space.lower_bound == 1.0
+    assert space.upper_bound == 9.0
+
+
+def test_discrete_space_transform_snaps_to_nearest():
+    space = sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])
+    assert float(space.transform(jnp.array([0.1]))[0]) == pytest.approx(0.0)
+    assert float(space.transform(jnp.array([0.4]))[0]) == pytest.approx(0.5)
+    assert float(space.transform(jnp.array([0.9]))[0]) == pytest.approx(1.0)
+
+
+def test_discrete_space_transform_preserves_shape():
+    space = sp.DiscreteSpace([0, 1, 2])
+    assert space.transform(jnp.array([1.4])).shape == (1,)
+    assert space.transform(jnp.array(1.4)).shape == ()
+
+
+def test_linear_space_lower_upper_bound():
+    space = sp.LinearSpace(2.0, 8.0)
+    assert space.lower_bound == 2.0
+    assert space.upper_bound == 8.0

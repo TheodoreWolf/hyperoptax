@@ -58,6 +58,12 @@ class TestGridSearchUpdateState:
             assert state.space_idx == i
             state = optimizer.update_state(state)
 
+    def test_update_state_increments_by_n_parallel(self):
+        space = {"x": sp.DiscreteSpace(list(range(10)))}
+        state, optimizer = GridSearch.init(space, n_parallel=3)
+        state = optimizer.update_state(state)
+        assert state.space_idx == 3
+
 
 class TestGridSearchShuffle:
     def test_shuffle_reorders_space_flat(self):
@@ -107,6 +113,13 @@ class TestGridSearchGetNextParams:
         params = optimizer.get_next_params(state)
         assert params is not None
 
+    def test_get_next_params_leaf_shape_n_parallel(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state, optimizer = GridSearch.init(space)
+        params = optimizer.get_next_params(state)
+        # n_parallel=1: each leaf has shape (1,)
+        assert params["x"].shape == (1,)
+
     def test_get_next_params_changes_after_update(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
@@ -120,6 +133,20 @@ class TestGridSearchGetNextParams:
         state, optimizer = GridSearch.init(space)
         params = optimizer.get_next_params(state)
         assert params is not None
+
+    def test_get_next_params_n_parallel_batch(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state, optimizer = GridSearch.init(space, n_parallel=2)
+        params = optimizer.get_next_params(state)
+        assert params["x"].shape == (2,)
+
+    def test_get_next_params_raises_on_overflow(self):
+        space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
+        state, optimizer = GridSearch.init(space, n_parallel=2)
+        # Move to last valid position
+        state = state.replace(space_idx=2)
+        with pytest.raises(ValueError, match="Not enough grid points"):
+            optimizer.get_next_params(state)
 
 
 class TestGridSearchOptimizeScan:
@@ -162,3 +189,13 @@ class TestGridSearchOptimize:
             state.space, is_leaf=lambda x: isinstance(x, sp.Space)
         )
         assert len(leaves) == 1
+
+    def test_optimize_n_parallel(self):
+        space = {"x": sp.DiscreteSpace(list(range(6)))}
+        state, optimizer = GridSearch.init(space, n_parallel=2)
+        func = lambda key, config: -(config["x"] ** 2)
+        state, (params_hist, results_hist) = optimizer.optimize(
+            state, jax.random.PRNGKey(0), func, n_iterations=3
+        )
+        assert len(params_hist) == 3
+        assert state.space_idx == 6  # 3 * 2 = 6
