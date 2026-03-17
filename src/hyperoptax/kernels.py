@@ -55,7 +55,15 @@ class Matern(BaseKernel):
         Controls smoothness (``nu`` ∈ {0.5, 1.5, 2.5, ∞}).
     """
 
+    _VALID_NU = {0.5, 1.5, 2.5, float("inf")}
+
     def __init__(self, length_scale: float = 1.0, nu: float = 2.5):
+        if nu not in self._VALID_NU:
+            valid = sorted(v for v in self._VALID_NU if v != float("inf"))
+            raise ValueError(
+                f"Matern kernel with nu={nu} is not supported. "
+                f"Choose from {valid} or inf."
+            )
         self.length_scale = length_scale
         self.nu = nu  # controls smoothness of the kernel, lower is less smooth
 
@@ -70,7 +78,5 @@ class Matern(BaseKernel):
         elif self.nu == 2.5:
             K = jnp.sqrt(5) * dists
             return (1 + K + K**2 / 3) * jnp.exp(-K)
-        elif self.nu == jnp.inf:  # RBF kernel
+        else:  # nu == inf: RBF kernel
             return jnp.exp(-(dists**2) / 2)
-        else:
-            raise ValueError(f"Matern kernel with nu={self.nu} is not supported.")

@@ -5,10 +5,10 @@ from hyperoptax.acquisition import (
     PI,
     UCB,
     BaseHallucination,
+    ConstantHallucination,
     MeanHallucination,
     SampleHallucination,
     UCBHallucination,
-    ConstantHallucination,
 )
 from hyperoptax.bayesian import BayesianSearch
 from hyperoptax.grid import GridSearch

@@ -14,25 +14,23 @@ class BaseAcquisition:
             mean (N,): The mean of the Gaussian process.
             std (N,): The standard deviation of the Gaussian process.
             y_max: Optional pre-computed reference value (e.g. best observed mean).
-                   Used by EI to ensure consistency when evaluating a single point.
+                   Used by EI/PI to ensure consistency when evaluating a single point.
 
         Returns:
             (N,): The acquisition value for the given mean and standard deviation.
         """
         raise NotImplementedError
 
+    @staticmethod
+    def _resolve_y_max(mean: jax.Array, y_max) -> jax.Array:
+        """Return y_max if provided, else fall back to max(mean).
+
+        Note: the fallback is only appropriate for standalone/exploratory use.
+        Always pass y_max explicitly when observed data is available.
+        """
+        return jnp.max(mean) if y_max is None else y_max
+
     def _sort_acq_vals(self, mean: jax.Array, std: jax.Array, seen_mask: jax.Array):
-        """
-        Sort the acquisition values for a given mean and standard deviation.
-
-        Args:
-            mean (N,): The mean of the Gaussian process.
-            std (N,): The standard deviation of the Gaussian process.
-            seen_mask (N,): Boolean mask, True for points already evaluated.
-
-        Returns:
-            (N,): The indices of the points sorted by acquisition value.
-        """
         acq_vals = self(mean, std)  # shape (N,)
         masked_acq = jnp.where(seen_mask, -jnp.inf, acq_vals)
         return jnp.argsort(masked_acq)
@@ -60,10 +58,7 @@ class EI(BaseAcquisition):
         self.xi = xi
 
     def __call__(self, mean: jax.Array, std: jax.Array, y_max=None):
-        # y_max should be the best observed function value. Falling back to
-        # max(mean) is an approximation suitable for standalone use only —
-        # always pass y_max explicitly when observations are available.
-        _y_max = jnp.max(mean) if y_max is None else y_max
+        _y_max = self._resolve_y_max(mean, y_max)
         a = mean - self.xi - _y_max
         z = a / std
         return a * norm.cdf(z) + std * norm.pdf(z)
@@ -76,25 +71,17 @@ class PI(BaseAcquisition):
         self.xi = xi
 
     def __call__(self, mean: jax.Array, std: jax.Array, y_max=None):
-        # y_max should be the best observed function value. Falling back to
-        # max(mean) is an approximation suitable for standalone use only —
-        # always pass y_max explicitly when observations are available.
-        _y_max = jnp.max(mean) if y_max is None else y_max
+        _y_max = self._resolve_y_max(mean, y_max)
         z = (mean - self.xi - _y_max) / std
         return norm.cdf(z)
 
 
 class BaseHallucination:
-    """Base class for Kriging Believer hallucination strategies."""
+    """Base class for Kriging Believer hallucination strategies.
 
-    def __call__(
-        self,
-        mean: jax.Array,
-        std: jax.Array,
-        key: jax.Array,
-        y_max: jax.Array,
-    ) -> jax.Array:
-        raise NotImplementedError
+    Any callable with signature ``(mean, std, key, y_max) -> scalar`` can be
+    used as a hallucination strategy — subclassing is optional.
+    """
 
 
 class MeanHallucination(BaseHallucination):

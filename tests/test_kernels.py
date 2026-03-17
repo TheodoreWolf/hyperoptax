@@ -71,9 +71,8 @@ class TestMatern:
         assert jnp.allclose(matern_inf(x, y), rbf(x, y), atol=1e-6)
 
     def test_matern_invalid_nu_raises(self):
-        kernel = Matern(length_scale=1.0, nu=3.0)
         with pytest.raises(ValueError, match="not supported"):
-            kernel(x, y)
+            Matern(length_scale=1.0, nu=3.0)
 
 
 class TestBaseKernel:

@@ -61,6 +61,8 @@ state, optimizer = BayesianSearch.init(
 state, (params_hist, results_hist) = optimizer.optimize(
     state, jax.random.PRNGKey(0), train_nn
 )
+# params_hist: list of pytrees, one per iteration (each leaf has shape (n_parallel,))
+# results_hist: list of arrays, one per iteration (each has shape (n_parallel,))
 
 # Retrieve best result
 print(optimizer.best_result(state))
@@ -79,10 +81,29 @@ state, optimizer = RandomSearch.init(search_space, n_parallel=8)
 state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=50)
 
 # Grid search (DiscreteSpace only)
+# Note: shuffle=True with no key argument uses PRNGKey(0); pass key explicitly for reproducibility.
 grid_space = {"lr": DiscreteSpace([1e-4, 1e-3, 1e-2]), "dropout": DiscreteSpace([0.1, 0.3, 0.5])}
 state, optimizer = GridSearch.init(grid_space)
 state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=9)
 ```
+
+### `optimize_scan()` — JAX-native loop
+
+`optimize_scan()` has the same signature as `optimize()` but uses `jax.lax.scan` internally.
+This requires your objective function to be JAX-traceable (jit-compilable), and returns
+**stacked arrays** rather than Python lists:
+
+```python
+state, (params_hist, results_hist) = optimizer.optimize_scan(
+    state, jax.random.PRNGKey(0), train_nn, n_iterations=25
+)
+# params_hist: pytree where each leaf has shape (n_iterations, n_parallel, ...)
+# results_hist: array of shape (n_iterations, n_parallel)
+```
+
+> **Return type difference:** `optimize()` returns Python lists (easy to index by iteration),
+> while `optimize_scan()` returns stacked JAX arrays (compatible with `jax.jit`, faster for
+> JAX-traceable objectives). Choose based on your objective function and use case.
 
 ## 💪 Hyperoptax in action
 <img src="./assets/gp_animation.gif" alt="BayesOpt animation" style="width:80%;"/>
@@ -100,16 +121,18 @@ We welcome pull requests! To get started:
 
 1. Open an issue describing the bug or feature.
 2. Fork the repository and create a feature branch (`git checkout -b my-feature`).
-3. Install dependencies:
+3. Clone and install dependencies. We recommend [uv](https://docs.astral.sh/uv/) for environment management:
 
 ```bash
-pip install -e ".[all]"
+git clone https://github.com/TheodoreWolf/hyperoptax
+cd hyperoptax
+uv pip install -e ".[all]"
 ```
 
 4. Run the test suite:
 
 ```bash
-pytest
+uv run pytest
 ```
 5. Ensure the notebooks still work.
 6. Format your code with `ruff`.
