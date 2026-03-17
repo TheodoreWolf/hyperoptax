@@ -21,7 +21,7 @@ class BaseAcquisition:
         """
         raise NotImplementedError
 
-    def sort_acq_vals(self, mean: jax.Array, std: jax.Array, seen_mask: jax.Array):
+    def _sort_acq_vals(self, mean: jax.Array, std: jax.Array, seen_mask: jax.Array):
         """
         Sort the acquisition values for a given mean and standard deviation.
 
@@ -40,24 +40,7 @@ class BaseAcquisition:
     def get_argmax(
         self, mean: jax.Array, std: jax.Array, seen_mask: jax.Array, n_points: int = 1
     ):
-        return self.sort_acq_vals(mean, std, seen_mask)[-n_points:]
-
-    def get_max(
-        self, mean: jax.Array, std: jax.Array, X: jax.Array, seen_mask: jax.Array
-    ):
-        """
-        Get the points with the highest acquisition values.
-
-        Args:
-            mean (N,): The mean of the Gaussian process.
-            std (N,): The standard deviation of the Gaussian process.
-            X (N, D): The points to evaluate.
-            seen_mask (N,): Boolean mask, True for points already evaluated.
-
-        Returns:
-            (n_points, D): The points with the highest acquisition values.
-        """
-        return X[self.get_argmax(mean, std, seen_mask)]
+        return self._sort_acq_vals(mean, std, seen_mask)[-n_points:]
 
 
 class UCB(BaseAcquisition):
@@ -101,7 +84,7 @@ class PI(BaseAcquisition):
         return norm.cdf(z)
 
 
-class BaseLiar:
+class BaseHallucination:
     """Base class for Kriging Believer hallucination strategies."""
 
     def __call__(
@@ -114,21 +97,21 @@ class BaseLiar:
         raise NotImplementedError
 
 
-class MeanLiar(BaseLiar):
+class MeanHallucination(BaseHallucination):
     """Classical Kriging Believer: hallucinate with GP posterior mean."""
 
     def __call__(self, mean, std, key, y_max):
         return mean[0]
 
 
-class SampleLiar(BaseLiar):
+class SampleHallucination(BaseHallucination):
     """Randomized Kriging Believer (RKB, arXiv 2603.01470): hallucinate with a posterior sample."""
 
     def __call__(self, mean, std, key, y_max):
         return mean[0] + std[0] * jax.random.normal(key)
 
 
-class UCBLiar(BaseLiar):
+class UCBHallucination(BaseHallucination):
     """Optimistic hallucination: mean + kappa * std."""
 
     def __init__(self, kappa: float = 2.0):
@@ -138,7 +121,7 @@ class UCBLiar(BaseLiar):
         return mean[0] + self.kappa * std[0]
 
 
-class ConstantLiar(BaseLiar):
+class ConstantHallucination(BaseHallucination):
     """Ginsbourger et al. 2010: hallucinate with y_max or a fixed constant.
 
     If value is None, uses the current best observed value (y_max).

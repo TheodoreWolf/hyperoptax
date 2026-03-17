@@ -31,15 +31,15 @@ class TestBayesianTiming:
         state = self._make_state_with_obs(optimizer)
         key = jax.random.PRNGKey(1)
         # warm-up (triggers compilation)
-        params, x_new = optimizer.get_next_params(state, key)
-        jax.block_until_ready(x_new)
+        params = optimizer.get_next_params(state, key)
+        jax.block_until_ready(jax.tree.leaves(params)[0])
 
         n_calls = 10
         t0 = time.perf_counter()
         for _ in range(n_calls):
             key, k = jax.random.split(key)
-            _, x_new = optimizer.get_next_params(state, k)
-        jax.block_until_ready(x_new)
+            params = optimizer.get_next_params(state, k)
+        jax.block_until_ready(jax.tree.leaves(params)[0])
         elapsed = time.perf_counter() - t0
         ms = elapsed / n_calls * 1000
         print(f"\nget_next_params: {ms:.1f} ms/call ({n_calls} calls)")

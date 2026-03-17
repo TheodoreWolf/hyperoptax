@@ -3,9 +3,9 @@ import jax.numpy as jnp
 import pytest
 
 from hyperoptax import spaces as sp
-from hyperoptax.bayesian import BayesianOptimizerState, BayesianSearch
+from hyperoptax.bayesian import BayesianSearchState, BayesianSearch
 from hyperoptax.kernels import RBF
-from hyperoptax.acquisition import EI, PI, UCB, MeanLiar, SampleLiar, UCBLiar, ConstantLiar
+from hyperoptax.acquisition import EI, PI, UCB, MeanHallucination, SampleHallucination, UCBHallucination, ConstantHallucination
 
 
 class TestBayesianSearchInit:
@@ -270,43 +270,40 @@ class TestBayesianSearchGetNextParams:
         self.key = jax.random.PRNGKey(0)
 
     def test_random_pick_when_no_observations(self):
-        params, x_new = self.optimizer.get_next_params(self.state, self.key)
+        params = self.optimizer.get_next_params(self.state, self.key)
         assert "x" in params
         valid_values = [0.0, 0.25, 0.5, 0.75, 1.0]
-        assert float(x_new[0, 0]) in valid_values
+        assert float(params["x"][0]) in valid_values
 
     def test_returns_valid_candidate_value(self):
-        params, x_new = self.optimizer.get_next_params(self.state, self.key)
+        params = self.optimizer.get_next_params(self.state, self.key)
         valid_values = [0.0, 0.25, 0.5, 0.75, 1.0]
         assert float(params["x"][0]) in valid_values
 
     def test_gp_pick_after_observations(self):
         state = self.state
         for x_val, y_val in [(0.0, 0.1), (1.0, 0.9)]:
-            x_new = jnp.array([[x_val]])
-            state = self.optimizer.update_state(state, self.key, jnp.array([y_val]), x_new)
-        params, x_new = self.optimizer.get_next_params(state, self.key)
+            state = self.optimizer.update_state(
+                state, self.key, jnp.array([y_val]), jnp.array([[x_val]])
+            )
+        params = self.optimizer.get_next_params(state, self.key)
         assert "x" in params
-        assert float(x_new[0, 0]) not in [0.0, 1.0]
-
-    def test_x_new_matches_params(self):
-        params, x_new = self.optimizer.get_next_params(self.state, self.key)
-        assert jnp.allclose(x_new[0, 0], params["x"][0])
+        assert float(params["x"][0]) not in [0.0, 1.0]
 
     def test_2d_space(self):
         space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
         state, optimizer = BayesianSearch.init(space, n_max=10)
-        params, x_new = optimizer.get_next_params(state, self.key)
+        params = optimizer.get_next_params(state, self.key)
         assert "x" in params
         assert "y" in params
-        assert x_new.shape == (1, 2)
+        assert params["x"].shape == (1,)
+        assert params["y"].shape == (1,)
 
     def test_n_parallel_discrete(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
         state, optimizer = BayesianSearch.init(space, n_max=20, n_parallel=3)
-        params, x_new = optimizer.get_next_params(state, self.key)
+        params = optimizer.get_next_params(state, self.key)
         assert params["x"].shape == (3,)
-        assert x_new.shape == (3, 1)
 
 
 class TestBayesianSearchOptimize:
@@ -368,9 +365,10 @@ class TestBayesianSearchOptimize:
     def test_optimize_continuous_with_ei_uses_observed_y_max(self):
         space = {"x": sp.LinearSpace(0.0, 1.0), "y": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = BayesianSearch.init(space, n_max=20, acquisition=EI())
-        x_new = jnp.array([[0.5, 0.5]])
-        state = optimizer.update_state(state, jax.random.PRNGKey(0), jnp.array([100.0]), x_new)
-        params, _ = optimizer.get_next_params(state, jax.random.PRNGKey(1))
+        state = optimizer.update_state(
+            state, jax.random.PRNGKey(0), jnp.array([100.0]), jnp.array([[0.5, 0.5]])
+        )
+        params = optimizer.get_next_params(state, jax.random.PRNGKey(1))
         assert "x" in params and "y" in params
 
     def test_optimize_minimize(self):
@@ -424,7 +422,7 @@ class TestBestParamsResult:
         _, optimizer = BayesianSearch.init(self.space, n_max=10, n_hparam_steps=0)
         state = self._state_with_obs(optimizer, [(0.25, 0.5), (0.75, 0.9), (0.5, 0.3)])
         params = optimizer.best_params(state)
-        assert float(params["x"][0]) == pytest.approx(0.75)
+        assert float(params["x"]) == pytest.approx(0.75)
 
     def test_best_params_minimize(self):
         _, optimizer = BayesianSearch.init(
@@ -432,7 +430,7 @@ class TestBestParamsResult:
         )
         state = self._state_with_obs(optimizer, [(0.25, 0.5), (0.75, 0.9), (0.5, 0.2)])
         params = optimizer.best_params(state)
-        assert float(params["x"][0]) == pytest.approx(0.5)
+        assert float(params["x"]) == pytest.approx(0.5)
 
     def test_best_result_after_full_optimize(self):
         state, optimizer = BayesianSearch.init(self.space, n_max=10)
@@ -481,23 +479,23 @@ class TestHparamTuning:
         assert jnp.allclose(jnp.exp(state.log_length_scale), 3.0)
 
 
-class TestNInitialRandom:
-    def test_n_initial_random_default(self):
+class TestNWarmup:
+    def test_n_warmup_default(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
         _, optimizer = BayesianSearch.init(space)
-        assert optimizer.n_initial_random == 1
+        assert optimizer.n_warmup == 1
 
-    def test_n_initial_random_runs_correctly(self):
+    def test_n_warmup_runs_correctly(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
-        state, optimizer = BayesianSearch.init(space, n_max=8, n_initial_random=4)
+        state, optimizer = BayesianSearch.init(space, n_max=8, n_warmup=4)
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
         assert int(state.mask.sum()) == 8
 
-    def test_n_initial_random_3_discrete(self):
+    def test_n_warmup_3_discrete(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
         state, optimizer = BayesianSearch.init(
-            space, n_max=5, n_initial_random=3, n_hparam_steps=0
+            space, n_max=5, n_warmup=3, n_hparam_steps=0
         )
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
@@ -508,9 +506,9 @@ class TestMixedSpace:
     def test_get_next_params_mixed(self):
         space = {"lr": sp.LogSpace(1e-4, 1e-1), "layers": sp.DiscreteSpace([1, 2, 3, 4])}
         state, optimizer = BayesianSearch.init(space, n_max=20)
-        params, x_new = optimizer.get_next_params(state, jax.random.PRNGKey(0))
+        params = optimizer.get_next_params(state, jax.random.PRNGKey(0))
         assert "lr" in params and "layers" in params
-        assert x_new.shape == (1, 2)
+        assert params["lr"].shape == (1,)
         assert float(params["layers"][0]) in [1, 2, 3, 4]
 
     def test_optimize_mixed_space(self):
@@ -670,20 +668,20 @@ class TestLBFGSImprovement:
             state = optimizer.update_state(
                 state, key, jnp.array([r]), jnp.array([[x, y_]])
             )
-        params, x_new = optimizer.get_next_params(state, key)
-        assert x_new.shape == (1, 2)
+        params = optimizer.get_next_params(state, key)
+        assert params["x"].shape == (1,)
         assert 0.0 <= float(params["x"][0]) <= 1.0
         assert 0.0 <= float(params["y"][0]) <= 1.0
 
 
-class TestKrigingBelieverLiar:
+class TestKrigingBelieverHallucination:
     """Tests for pluggable KB hallucination strategies."""
 
-    def _make_state_with_obs(self, space, n_max, n_parallel, liar=None, n_obs=3):
+    def _make_state_with_obs(self, space, n_max, n_parallel, hallucination=None, n_obs=3):
         kwargs = dict(n_max=n_max, n_parallel=n_parallel, n_hparam_steps=0,
                       n_restarts=1, n_lbfgs_steps=5, n_candidates=50)
-        if liar is not None:
-            kwargs["liar"] = liar
+        if hallucination is not None:
+            kwargs["hallucination"] = hallucination
         state, optimizer = BayesianSearch.init(space, **kwargs)
         key = jax.random.PRNGKey(0)
         leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
@@ -693,76 +691,76 @@ class TestKrigingBelieverLiar:
             state = optimizer.update_state(state, key, jnp.array([float(i)]), x)
         return state, optimizer
 
-    def test_default_liar_is_mean(self):
+    def test_default_hallucination_is_mean(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         _, optimizer = BayesianSearch.init(space)
-        assert isinstance(optimizer.liar, MeanLiar)
+        assert isinstance(optimizer.hallucination, MeanHallucination)
 
-    def test_mean_liar_optimize_runs(self):
+    def test_mean_hallucination_optimize_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = self._make_state_with_obs(
-            space, n_max=9, n_parallel=3, liar=MeanLiar()
+            space, n_max=9, n_parallel=3, hallucination=MeanHallucination()
         )
         key = jax.random.PRNGKey(1)
         func = lambda k, p: p["x"] ** 2
         state, _ = optimizer.optimize(state, key, func)
         assert int(state.mask.sum()) == 9
 
-    def test_sample_liar_optimize_runs(self):
+    def test_sample_hallucination_optimize_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = self._make_state_with_obs(
-            space, n_max=9, n_parallel=3, liar=SampleLiar()
+            space, n_max=9, n_parallel=3, hallucination=SampleHallucination()
         )
         key = jax.random.PRNGKey(2)
         func = lambda k, p: p["x"] ** 2
         state, _ = optimizer.optimize(state, key, func)
         assert int(state.mask.sum()) == 9
 
-    def test_ucb_liar_optimize_runs(self):
+    def test_ucb_hallucination_optimize_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = self._make_state_with_obs(
-            space, n_max=9, n_parallel=3, liar=UCBLiar(kappa=1.5)
+            space, n_max=9, n_parallel=3, hallucination=UCBHallucination(kappa=1.5)
         )
         key = jax.random.PRNGKey(3)
         func = lambda k, p: p["x"] ** 2
         state, _ = optimizer.optimize(state, key, func)
         assert int(state.mask.sum()) == 9
 
-    def test_constant_liar_optimize_runs(self):
+    def test_constant_hallucination_optimize_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = self._make_state_with_obs(
-            space, n_max=9, n_parallel=3, liar=ConstantLiar()
+            space, n_max=9, n_parallel=3, hallucination=ConstantHallucination()
         )
         key = jax.random.PRNGKey(4)
         func = lambda k, p: p["x"] ** 2
         state, _ = optimizer.optimize(state, key, func)
         assert int(state.mask.sum()) == 9
 
-    def test_different_liars_produce_different_batches(self):
+    def test_different_hallucinations_produce_different_batches(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state_mean, opt_mean = self._make_state_with_obs(
-            space, n_max=20, n_parallel=3, liar=MeanLiar()
+            space, n_max=20, n_parallel=3, hallucination=MeanHallucination()
         )
         state_sample, opt_sample = self._make_state_with_obs(
-            space, n_max=20, n_parallel=3, liar=SampleLiar()
+            space, n_max=20, n_parallel=3, hallucination=SampleHallucination()
         )
         key = jax.random.PRNGKey(99)
-        _, x_mean = opt_mean.get_next_params(state_mean, key)
-        _, x_sample = opt_sample.get_next_params(state_sample, key)
+        p_mean = opt_mean.get_next_params(state_mean, key)
+        p_sample = opt_sample.get_next_params(state_sample, key)
         # At least one of the parallel points should differ between strategies
-        assert not jnp.allclose(x_mean, x_sample)
+        assert not jnp.allclose(p_mean["x"], p_sample["x"])
 
-    def test_liar_used_only_after_n_initial_random(self):
-        # With n_initial_random > n_seen, random init path is taken regardless of liar
+    def test_liar_used_only_after_n_warmup(self):
+        # With n_warmup > n_seen, random init path is taken regardless of liar
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = BayesianSearch.init(
-            space, n_max=20, n_parallel=2, n_initial_random=5,
-            n_hparam_steps=0, liar=SampleLiar()
+            space, n_max=20, n_parallel=2, n_warmup=5,
+            n_hparam_steps=0, hallucination=SampleHallucination()
         )
         key = jax.random.PRNGKey(7)
-        # Only 2 observations — below n_initial_random=5, so random path taken
+        # Only 2 observations — below n_warmup=5, so random path taken
         state = optimizer.update_state(state, key, jnp.array([1.0, 0.5]),
                                        jnp.array([[0.1], [0.9]]))
-        params, x_new = optimizer.get_next_params(state, key)
-        assert x_new.shape == (2, 1)
-        assert jnp.all((x_new >= 0.0) & (x_new <= 1.0))
+        params = optimizer.get_next_params(state, key)
+        assert params["x"].shape == (2,)
+        assert jnp.all((params["x"] >= 0.0) & (params["x"] <= 1.0))

@@ -36,7 +36,7 @@ class LinearSpace(Space):
 
 
 class DiscreteSpace(Space):
-    values: str = struct.field(pytree_node=False)
+    values: tuple = struct.field(pytree_node=False)
 
     @property
     def lower_bound(self) -> float:

@@ -11,7 +11,7 @@
 
 ## ⛰️ Introduction
 
-Hyperoptax is a lightweight toolbox for parallel hyperparameter optimization of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces __in parallel__  – all while staying in pure JAX. 
+Hyperoptax is a lightweight toolbox for parallel hyperparameter optimization of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces __in parallel__  – all while staying in pure JAX.
 
 ## 🏗️ Installation
 
@@ -32,24 +32,56 @@ pip install --upgrade "jax[cpu]"
 # or GPU/TPU – see the official JAX installation guide
 ```
 ## 🥜 In a nutshell
-Hyperoptax offers a simple API to wrap pure JAX functions for hyperparameter search and making use of parallelization (vmap only currently). See the [notebooks](https://github.com/TheodoreWolf/hyperoptax/tree/main/notebooks) for more examples.
+
+All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`.
+
 ```python
-from hyperoptax.bayesian import BayesianOptimizer
+import jax
+from hyperoptax.bayesian import BayesianSearch
 from hyperoptax.spaces import LogSpace, LinearSpace
 
-@jax.jit
-def train_nn(learning_rate, final_lr_pct):
+def train_nn(key, params):
+    learning_rate = params["learning_rate"]
+    final_lr_pct = params["final_lr_pct"]
     ...
-    return val_loss
+    return val_loss  # scalar, lower is better
 
-search_space = {"learning_rate": LogSpace(1e-5,1e-1, 100),
-                "final_lr_pct": LinearSpace(0.01, 0.5, 100)}
+search_space = {
+    "learning_rate": LogSpace(1e-5, 1e-1),
+    "final_lr_pct": LinearSpace(0.01, 0.5),
+}
 
-search = BayesianOptimizer(search_space, train_nn)
-best_params = search.optimize(n_iterations=100, 
-                              n_parallel=10, 
-                              maximize=False,
-                              )
+state, optimizer = BayesianSearch.init(
+    search_space,
+    n_max=100,       # observation buffer size (= number of iterations)
+    n_parallel=4,    # Kriging Believer batch size
+    maximize=False,
+)
+
+state, (params_hist, results_hist) = optimizer.optimize(
+    state, jax.random.PRNGKey(0), train_nn
+)
+
+# Retrieve best result
+print(optimizer.best_result(state))
+print(optimizer.best_params(state))
+```
+
+Other available optimizers:
+
+```python
+from hyperoptax.random import RandomSearch
+from hyperoptax.grid import GridSearch
+from hyperoptax.spaces import DiscreteSpace
+
+# Random search
+state, optimizer = RandomSearch.init(search_space, n_parallel=8)
+state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=50)
+
+# Grid search (DiscreteSpace only)
+grid_space = {"lr": DiscreteSpace([1e-4, 1e-3, 1e-2]), "dropout": DiscreteSpace([0.1, 0.3, 0.5])}
+state, optimizer = GridSearch.init(grid_space)
+state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=9)
 ```
 
 ## 💪 Hyperoptax in action
@@ -77,22 +109,18 @@ pip install -e ".[all]"
 4. Run the test suite:
 
 ```bash
-XLA_FLAGS=--xla_force_host_platform_device_count=4 pytest # Fake GPUs for pmap tests
+pytest
 ```
 5. Ensure the notebooks still work.
 6. Format your code with `ruff`.
 7. Submit a pull request.
 
 ## Roadmap
-I'm developing this both as a passion project and for my work in my PhD. I have a few ideas on where to go with this libary:
-- Sample hyperparameter configurations on the fly rather than generate a huge grid at initialisation. 
-- Switch domain type from a list of arrays to a PyTree.
+I'm developing this both as a passion project and for my work in my PhD. I have a few ideas on where to go with this library:
 - Callbacks!
-- Inspired by wandb's sweeps, use a linear grid for all parameters and apply transformations at sample time.
-- We are currently redoing the kernel calculation at each iteration when only the last row/column is actually needed. JAX requires sizes to be constant, so we need to do something clever...
-- Need to find a way to share the GP across workers on pmap for Bayesian.
-- Length scale tuning of kernel tuned during optimization (as done in other implementations).
-- Some clumpiness in the acquisisiton, there is literature that can help us.
+- Some clumpiness in the acquisition function; there is literature that can help.
+- Reduce redundant kernel recomputation — currently the full K matrix is rebuilt each iteration when only the new row/column is needed.
+- Length scale tuning currently uses a fixed Adam step count; smarter convergence criteria could help.
 
 ## 📝 Citation
 

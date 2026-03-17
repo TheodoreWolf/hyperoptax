@@ -5,20 +5,23 @@ import pytest
 from hyperoptax import spaces as sp
 from hyperoptax.grid import GridSearch, GridSearchState
 
+_KEY = jax.random.PRNGKey(0)
+_DUMMY_RESULTS = jnp.array([0.0])
+
 
 class TestGridSearchInit:
     def test_init_discrete_1d(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
         assert isinstance(state, GridSearchState)
-        assert state.space_idx == 0
+        assert state.grid_idx == 0
         assert not optimizer.shuffle
 
     def test_init_discrete_2d(self):
         space = {"x": sp.DiscreteSpace([0, 1, 2]), "y": sp.DiscreteSpace([0.0, 0.5])}
         state, optimizer = GridSearch.init(space)
         assert isinstance(state, GridSearchState)
-        assert state.space_idx == 0
+        assert state.grid_idx == 0
 
     def test_init_shuffle(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
@@ -40,113 +43,113 @@ class TestGridSearchUpdateState:
     def test_update_state_increments_idx(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
-        assert state.space_idx == 0
-        state = optimizer.update_state(state)
-        assert state.space_idx == 1
+        assert state.grid_idx == 0
+        state = optimizer.update_state(state, _KEY, _DUMMY_RESULTS)
+        assert state.grid_idx == 1
 
     def test_update_state_does_not_mutate(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
-        new_state = optimizer.update_state(state)
-        assert state.space_idx == 0
-        assert new_state.space_idx == 1
+        new_state = optimizer.update_state(state, _KEY, _DUMMY_RESULTS)
+        assert state.grid_idx == 0
+        assert new_state.grid_idx == 1
 
     def test_update_state_increments_repeatedly(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
         for i in range(5):
-            assert state.space_idx == i
-            state = optimizer.update_state(state)
+            assert state.grid_idx == i
+            state = optimizer.update_state(state, _KEY, _DUMMY_RESULTS)
 
     def test_update_state_increments_by_n_parallel(self):
         space = {"x": sp.DiscreteSpace(list(range(10)))}
         state, optimizer = GridSearch.init(space, n_parallel=3)
-        state = optimizer.update_state(state)
-        assert state.space_idx == 3
+        state = optimizer.update_state(state, _KEY, _DUMMY_RESULTS)
+        assert state.grid_idx == 3
 
 
 class TestGridSearchShuffle:
-    def test_shuffle_reorders_space_flat(self):
+    def test_shuffle_reorders_grid(self):
         space = {"x": sp.DiscreteSpace(list(range(20)))}
         state_unshuffled, _ = GridSearch.init(space)
         state_shuffled, _ = GridSearch.init(space, shuffle=True, key=jax.random.PRNGKey(0))
-        assert not jnp.allclose(state_unshuffled.space_flat, state_shuffled.space_flat)
+        assert not jnp.allclose(state_unshuffled.grid, state_shuffled.grid)
 
     def test_shuffle_preserves_size(self):
         space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
         state, _ = GridSearch.init(space, shuffle=True, key=jax.random.PRNGKey(0))
-        assert state.space_flat.shape == (6, 2)
+        assert state.grid.shape == (6, 2)
 
     def test_shuffle_preserves_values(self):
         space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
         state_unshuffled, _ = GridSearch.init(space)
         state_shuffled, _ = GridSearch.init(space, shuffle=True, key=jax.random.PRNGKey(0))
         assert jnp.allclose(
-            jnp.sort(state_unshuffled.space_flat, axis=0),
-            jnp.sort(state_shuffled.space_flat, axis=0),
+            jnp.sort(state_unshuffled.grid, axis=0),
+            jnp.sort(state_shuffled.grid, axis=0),
         )
 
     def test_different_keys_give_different_orderings(self):
         space = {"x": sp.DiscreteSpace(list(range(20)))}
         state_a, _ = GridSearch.init(space, shuffle=True, key=jax.random.PRNGKey(0))
         state_b, _ = GridSearch.init(space, shuffle=True, key=jax.random.PRNGKey(1))
-        assert not jnp.allclose(state_a.space_flat, state_b.space_flat)
+        assert not jnp.allclose(state_a.grid, state_b.grid)
 
     def test_no_shuffle_by_default(self):
         space = {"x": sp.DiscreteSpace([0, 1, 2])}
         state, _ = GridSearch.init(space)
-        assert jnp.allclose(state.space_flat[:, 0], jnp.array([0, 1, 2], dtype=state.space_flat.dtype))
+        assert jnp.allclose(state.grid[:, 0], jnp.array([0, 1, 2], dtype=state.grid.dtype))
 
 
-class TestGridSearchSpaceFlat:
+class TestGridSearchGrid:
     def test_flat_space_size_is_product_of_dim_sizes(self):
         space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
         state, _ = GridSearch.init(space)
-        assert state.space_flat.shape[0] == 6  # 2 * 3 = 6
-        assert state.space_flat.shape[1] == 2  # 2 params
+        assert state.grid.shape[0] == 6  # 2 * 3 = 6
+        assert state.grid.shape[1] == 2  # 2 params
 
 
 class TestGridSearchGetNextParams:
     def test_get_next_params_first_index(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
-        params = optimizer.get_next_params(state)
+        params = optimizer.get_next_params(state, _KEY)
         assert params is not None
 
     def test_get_next_params_leaf_shape_n_parallel(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
-        params = optimizer.get_next_params(state)
+        params = optimizer.get_next_params(state, _KEY)
         # n_parallel=1: each leaf has shape (1,)
         assert params["x"].shape == (1,)
 
     def test_get_next_params_changes_after_update(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
-        params_0 = optimizer.get_next_params(state)
-        state = optimizer.update_state(state)
-        params_1 = optimizer.get_next_params(state)
+        params_0 = optimizer.get_next_params(state, _KEY)
+        state = optimizer.update_state(state, _KEY, _DUMMY_RESULTS)
+        params_1 = optimizer.get_next_params(state, _KEY)
         assert not jnp.allclose(params_0["x"], params_1["x"])
 
     def test_get_next_params_2d_grid(self):
         space = {"x": sp.DiscreteSpace([0, 1]), "y": sp.DiscreteSpace([0, 1, 2])}
         state, optimizer = GridSearch.init(space)
-        params = optimizer.get_next_params(state)
+        params = optimizer.get_next_params(state, _KEY)
         assert params is not None
 
     def test_get_next_params_n_parallel_batch(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space, n_parallel=2)
-        params = optimizer.get_next_params(state)
+        params = optimizer.get_next_params(state, _KEY)
         assert params["x"].shape == (2,)
 
     def test_get_next_params_raises_on_overflow(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space, n_parallel=2)
         # Move to last valid position
-        state = state.replace(space_idx=2)
+        state = state.replace(grid_idx=2)
         with pytest.raises(ValueError, match="Not enough grid points"):
-            optimizer.get_next_params(state)
+            optimizer.get_next_params(state, _KEY)
 
 
 class TestGridSearchOptimizeScan:
@@ -171,13 +174,13 @@ class TestGridSearchOptimize:
         assert len(params_hist) == 3
         assert len(results_hist) == 3
 
-    def test_optimize_increments_space_idx(self):
+    def test_optimize_increments_grid_idx(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = GridSearch.init(space)
         state, _ = optimizer.optimize(
             state, jax.random.PRNGKey(0), lambda key, config: -(config["x"]**2), 2
         )
-        assert state.space_idx == 2
+        assert state.grid_idx == 2
 
     def test_state_space_accessible_via_inheritance(self):
         # Regression: GridSearchState used to duplicate the `space` field from
@@ -198,4 +201,4 @@ class TestGridSearchOptimize:
             state, jax.random.PRNGKey(0), func, n_iterations=3
         )
         assert len(params_hist) == 3
-        assert state.space_idx == 6  # 3 * 2 = 6
+        assert state.grid_idx == 6  # 3 * 2 = 6

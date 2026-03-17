@@ -4,7 +4,7 @@ import pytest
 
 from hyperoptax.acquisition import (
     EI, PI, UCB, BaseAcquisition,
-    BaseLiar, MeanLiar, SampleLiar, UCBLiar, ConstantLiar,
+    BaseHallucination, MeanHallucination, SampleHallucination, UCBHallucination, ConstantHallucination,
 )
 
 
@@ -39,58 +39,58 @@ class TestGetArgmax:
 
 
 class TestUCB:
-    def test_get_max_when_none_seen(self):
+    def test_get_argmax_when_none_seen(self):
         ucb = UCB(kappa=2.0)
         mean = jnp.array([1.0, 0.0])
         std = jnp.array([0.1, 0.1])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0]])
         seen_mask = jnp.array([False, False])
 
-        max_val = ucb.get_max(mean, std, X, seen_mask)
-        assert jnp.allclose(max_val, jnp.array([2.0, 2.0]))
+        max_val = X[ucb.get_argmax(mean, std, seen_mask)]
+        assert jnp.allclose(max_val, jnp.array([[2.0, 2.0]]))
 
-    def test_get_max_excludes_seen(self):
+    def test_get_argmax_excludes_seen(self):
         ucb = UCB(kappa=2.0)
         mean = jnp.array([1.0, 0.0, 0.0])
         std = jnp.array([0.1, 0.1, 0.2])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0], [0.0, 0.0]])
         seen_mask = jnp.array([True, False, False])
 
-        max_val = ucb.get_max(mean, std, X, seen_mask)
-        assert jnp.allclose(max_val, jnp.array([0.0, 0.0]))
+        max_val = X[ucb.get_argmax(mean, std, seen_mask)]
+        assert jnp.allclose(max_val, jnp.array([[0.0, 0.0]]))
 
-    def test_get_max_when_jitted(self):
+    def test_get_argmax_when_jitted(self):
         ucb = UCB(kappa=2.0)
         mean = jnp.array([1.0, 0.0, 0.0])
         std = jnp.array([0.1, 0.1, 0.2])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0], [0.0, 0.0]])
         seen_mask = jnp.array([True, False, False])
 
-        max_val = jax.jit(ucb.get_max)(mean, std, X, seen_mask)
-        assert jnp.allclose(max_val, jnp.array([0.0, 0.0]))
+        argmax = jax.jit(ucb.get_argmax)(mean, std, seen_mask)
+        assert jnp.allclose(X[argmax], jnp.array([[0.0, 0.0]]))
 
 
 
 class TestEI:
-    def test_get_max_when_none_seen(self):
+    def test_get_argmax_when_none_seen(self):
         ei = EI(xi=0.01)
         mean = jnp.array([1.0, 0.0])
         std = jnp.array([0.1, 0.1])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0]])
         seen_mask = jnp.array([False, False])
 
-        max_val = ei.get_max(mean, std, X, seen_mask)
-        assert jnp.allclose(max_val, jnp.array([2.0, 2.0]))
+        max_val = X[ei.get_argmax(mean, std, seen_mask)]
+        assert jnp.allclose(max_val, jnp.array([[2.0, 2.0]]))
 
-    def test_get_max_when_jitted(self):
+    def test_get_argmax_when_jitted(self):
         ei = EI(xi=0.01)
         mean = jnp.array([1.0, 0.0, 0.0])
         std = jnp.array([0.1, 0.1, 0.2])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0], [0.0, 0.0]])
         seen_mask = jnp.array([True, False, False])
 
-        max_val = jax.jit(ei.get_max)(mean, std, X, seen_mask)
-        assert jnp.allclose(max_val, jnp.array([0.0, 0.0]))
+        argmax = jax.jit(ei.get_argmax)(mean, std, seen_mask)
+        assert jnp.allclose(X[argmax], jnp.array([[0.0, 0.0]]))
 
 
 class TestPI:
@@ -124,9 +124,9 @@ class TestPI:
         std = jnp.array([0.1, 0.1, 0.2])
         X = jnp.array([[2.0, 2.0], [1.0, 1.0], [0.0, 0.0]])
         seen_mask = jnp.array([True, False, False])
-        result = pi.get_max(mean, std, X, seen_mask)
+        result = X[pi.get_argmax(mean, std, seen_mask)]
         # Index 0 is seen (best PI), so should return index 2 (highest unseen PI)
-        assert not jnp.allclose(result, jnp.array([2.0, 2.0]))
+        assert not jnp.allclose(result, jnp.array([[2.0, 2.0]]))
 
     def test_pi_jitted(self):
         pi = PI(xi=0.01)
@@ -160,55 +160,58 @@ class TestBaseAcquisition:
         assert jnp.allclose(vals_auto, vals_explicit)
 
 
-class TestLiarStrategies:
+class TestHallucinationStrategies:
     def setup_method(self):
         self.mean = jnp.array([1.5])
         self.std = jnp.array([0.3])
         self.key = jax.random.PRNGKey(0)
         self.y_max = jnp.array(1.0)
 
-    def test_mean_liar_returns_mean(self):
-        liar = MeanLiar()
-        out = liar(self.mean, self.std, self.key, self.y_max)
+    def test_mean_hallucination_returns_mean(self):
+        h = MeanHallucination()
+        out = h(self.mean, self.std, self.key, self.y_max)
         assert jnp.allclose(out, self.mean[0])
 
-    def test_sample_liar_is_stochastic(self):
-        liar = SampleLiar()
+    def test_sample_hallucination_is_stochastic(self):
+        h = SampleHallucination()
         key1, key2 = jax.random.split(self.key)
-        out1 = liar(self.mean, self.std, key1, self.y_max)
-        out2 = liar(self.mean, self.std, key2, self.y_max)
+        out1 = h(self.mean, self.std, key1, self.y_max)
+        out2 = h(self.mean, self.std, key2, self.y_max)
         assert not jnp.allclose(out1, out2)
 
-    def test_sample_liar_mean_is_posterior_mean(self):
-        liar = SampleLiar()
+    def test_sample_hallucination_mean_is_posterior_mean(self):
+        h = SampleHallucination()
         keys = jax.random.split(self.key, 5000)
-        samples = jnp.array([liar(self.mean, self.std, k, self.y_max) for k in keys])
+        samples = jnp.array([h(self.mean, self.std, k, self.y_max) for k in keys])
         assert jnp.abs(jnp.mean(samples) - self.mean[0]) < 0.05
 
-    def test_ucb_liar_formula(self):
+    def test_ucb_hallucination_formula(self):
         kappa = 3.0
-        liar = UCBLiar(kappa=kappa)
-        out = liar(self.mean, self.std, self.key, self.y_max)
+        h = UCBHallucination(kappa=kappa)
+        out = h(self.mean, self.std, self.key, self.y_max)
         assert jnp.allclose(out, self.mean[0] + kappa * self.std[0])
 
-    def test_constant_liar_uses_y_max(self):
-        liar = ConstantLiar()
-        out = liar(self.mean, self.std, self.key, self.y_max)
+    def test_constant_hallucination_uses_y_max(self):
+        h = ConstantHallucination()
+        out = h(self.mean, self.std, self.key, self.y_max)
         assert jnp.allclose(out, self.y_max)
 
-    def test_constant_liar_fixed_value(self):
-        liar = ConstantLiar(value=42.0)
-        out = liar(self.mean, self.std, self.key, self.y_max)
+    def test_constant_hallucination_fixed_value(self):
+        h = ConstantHallucination(value=42.0)
+        out = h(self.mean, self.std, self.key, self.y_max)
         assert jnp.allclose(out, jnp.array(42.0))
 
-    def test_constant_liar_fixed_value_ignores_y_max(self):
-        liar = ConstantLiar(value=42.0)
-        out1 = liar(self.mean, self.std, self.key, jnp.array(0.0))
-        out2 = liar(self.mean, self.std, self.key, jnp.array(999.0))
+    def test_constant_hallucination_fixed_value_ignores_y_max(self):
+        h = ConstantHallucination(value=42.0)
+        out1 = h(self.mean, self.std, self.key, jnp.array(0.0))
+        out2 = h(self.mean, self.std, self.key, jnp.array(999.0))
         assert jnp.allclose(out1, out2)
 
-    def test_all_liars_return_scalar(self):
-        liars = [MeanLiar(), SampleLiar(), UCBLiar(), ConstantLiar(), ConstantLiar(value=1.0)]
-        for liar in liars:
-            out = liar(self.mean, self.std, self.key, self.y_max)
-            assert out.ndim == 0, f"{type(liar).__name__} did not return scalar"
+    def test_all_hallucinations_return_scalar(self):
+        strategies = [
+            MeanHallucination(), SampleHallucination(), UCBHallucination(),
+            ConstantHallucination(), ConstantHallucination(value=1.0),
+        ]
+        for h in strategies:
+            out = h(self.mean, self.std, self.key, self.y_max)
+            assert out.ndim == 0, f"{type(h).__name__} did not return scalar"

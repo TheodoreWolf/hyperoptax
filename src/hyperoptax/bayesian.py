@@ -7,15 +7,15 @@ import optax
 from flax import struct
 
 from hyperoptax import spaces as sp
-from hyperoptax.acquisition import EI, BaseAcquisition, BaseLiar, MeanLiar
-from hyperoptax.base import Optimizer, OptimizerState, _validate_func
+from hyperoptax.acquisition import EI, BaseAcquisition, BaseHallucination, MeanHallucination
+from hyperoptax.base import Optimizer, OptimizerState
 from hyperoptax.kernels import BaseKernel, Matern
 
-MASK_VARIANCE = 1e12
+MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from GP fit
 
 
 @struct.dataclass
-class BayesianOptimizerState(OptimizerState):
+class BayesianSearchState(OptimizerState):
     X: jax.Array  # (n_max, n_params) padded with zeros
     y: jax.Array  # (n_max,) padded with zeros — raw (un-negated) results
     mask: jax.Array  # (n_max,) bool, True for valid entries
@@ -35,17 +35,17 @@ class BayesianSearch(Optimizer):
     n_restarts: int = 2  # number of L-BFGS restarts (seeded from top candidates)
     n_lbfgs_steps: int = 10  # gradient steps per restart
     n_hparam_steps: int = 20  # Adam steps to tune log_length_scale each iteration
-    n_initial_random: int = 1  # pure-random evaluations before GP kicks in
+    n_warmup: int = 1  # pure-random evaluations before GP kicks in
     maximize: bool = True  # set False to minimize the objective
     n_parallel: int = 1
-    liar: BaseLiar = dataclasses.field(default_factory=MeanLiar)
+    hallucination: BaseHallucination = dataclasses.field(default_factory=MeanHallucination)
 
     @classmethod
     def init(cls, space, n_max=200, **kwargs):
         # Create the optimizer first so we can read kernel.length_scale for init.
         optimizer = cls(**kwargs)
         leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
-        state = BayesianOptimizerState(
+        state = BayesianSearchState(
             space=space,
             X=jnp.zeros((n_max, len(leaves))),
             y=jnp.zeros(n_max),
@@ -60,14 +60,14 @@ class BayesianSearch(Optimizer):
     # Convenience accessors
     # ------------------------------------------------------------------
 
-    def best_result(self, state: BayesianOptimizerState) -> jax.Array:
+    def best_result(self, state: BayesianSearchState) -> jax.Array:
         """Return the best observed raw result (max if maximize, min if minimize)."""
         if self.maximize:
             return jnp.max(state.y, where=state.mask, initial=-jnp.inf)
         else:
             return jnp.min(state.y, where=state.mask, initial=jnp.inf)
 
-    def best_params(self, state: BayesianOptimizerState):
+    def best_params(self, state: BayesianSearchState):
         """Return the parameter pytree that achieved the best observed result."""
         if self.maximize:
             best_n = int(jnp.argmax(jnp.where(state.mask, state.y, -jnp.inf)))
@@ -77,7 +77,8 @@ class BayesianSearch(Optimizer):
         _, treedef = jax.tree.flatten(
             state.space, is_leaf=lambda x: isinstance(x, sp.Space)
         )
-        return treedef.unflatten([x_best[i : i + 1] for i in range(treedef.num_leaves)])
+        # Return scalar leaves (shape ()) — one value per parameter.
+        return treedef.unflatten([x_best[i] for i in range(treedef.num_leaves)])
 
     # ------------------------------------------------------------------
     # Space helpers
@@ -106,7 +107,7 @@ class BayesianSearch(Optimizer):
     # GP helpers
     # ------------------------------------------------------------------
 
-    def _effective_y(self, state: BayesianOptimizerState) -> jax.Array:
+    def _effective_y(self, state: BayesianSearchState) -> jax.Array:
         """y in 'higher is better' orientation for GP fitting."""
         return state.y if self.maximize else -state.y
 
@@ -151,7 +152,7 @@ class BayesianSearch(Optimizer):
         def tune(X, y, mask, log_length_scale):
             def neg_log_ml(log_ls):
                 ls = jnp.exp(log_ls)
-                ymean = jnp.sum(y * mask) / jnp.sum(mask)
+                ymean = jnp.mean(y, where=mask)
                 y_c = (y - ymean) * mask
                 K = kernel(X, X, length_scale=ls)
                 M = jnp.outer(mask.astype(float), mask.astype(float))
@@ -177,7 +178,7 @@ class BayesianSearch(Optimizer):
 
         return tune
 
-    def _tune_hparams(self, state: BayesianOptimizerState) -> jax.Array:
+    def _tune_hparams(self, state: BayesianSearchState) -> jax.Array:
         return self._tune_hparams_fn(
             state.X, self._effective_y(state), state.mask, state.log_length_scale
         )
@@ -186,7 +187,7 @@ class BayesianSearch(Optimizer):
     # Parameter selection
     # ------------------------------------------------------------------
 
-    def _get_next_params_continuous(self, state, key):
+    def _select_next_x(self, state, key):
         key_sample, key_rest = jax.random.split(key)
         leaves = jax.tree.leaves(state.space, is_leaf=lambda x: isinstance(x, sp.Space))
         _, treedef = jax.tree.flatten(
@@ -279,7 +280,7 @@ class BayesianSearch(Optimizer):
                 )
                 X_ext = X_ext.at[n_max + i].set(best_x)
                 y_ext = y_ext.at[n_max + i].set(
-                    self.liar(mean_i, std_i, key_liar, y_max)
+                    self.hallucination(mean_i, std_i, key_liar, y_max)
                 )
                 mask_ext = mask_ext.at[n_max + i].set(True)
                 xs_raw_list.append(best_x)
@@ -288,7 +289,7 @@ class BayesianSearch(Optimizer):
 
         # Use lax.cond so this is JAX-traceable (required for lax.scan / vmap)
         xs_raw = jax.lax.cond(
-            state.mask.sum() < self.n_initial_random,
+            state.mask.sum() < self.n_warmup,
             _random_branch,
             _gp_branch,
             key_rest,
@@ -310,47 +311,49 @@ class BayesianSearch(Optimizer):
         batch_params = treedef.unflatten(
             [xs_out[:, i] for i in range(treedef.num_leaves)]
         )
-        return batch_params, xs_out
+        return batch_params
 
     def get_next_params(self, state, key, params=None, results=None):
-        """
-        Returns (batch_params, xs) where:
-          - batch_params: batched pytree, each leaf has shape (n_parallel, ...)
-          - xs: (n_parallel, n_params) flat array of those values (for update_state)
-        """
-        return self._get_next_params_continuous(state, key)
+        return self._select_next_x(state, key)
 
-    def update_state(self, state, key, results, x_new):
+    def update_state(self, state, key, results, params):
         """
         Args:
             results: (n_parallel,) array of observed results
-            x_new: (n_parallel, n_params) array of evaluated parameter vectors
-
-        Writes each observation individually with a lax.cond guard so that
-        out-of-bounds slots are silently dropped.  This is fully JAX-traceable
-        (compatible with lax.scan and vmap) and correctly handles overflow.
+            params: either the batched params pytree from get_next_params
+                    (each leaf shape (n_parallel,)) or a raw (n_parallel, n_params)
+                    flat array.
         """
         results = jnp.atleast_1d(jnp.squeeze(results))
         n_parallel = results.shape[0]  # static Python int
         n_max = state.X.shape[0]  # static Python int
-        x_new = jnp.atleast_2d(x_new)
+        n_params = state.X.shape[1]  # static Python int
+        if isinstance(params, jax.Array):
+            x_new = jnp.atleast_2d(params)
+        else:
+            x_new = jnp.stack(jax.tree.leaves(params), axis=-1)  # (n_parallel, n_params)
         n = state.mask.sum()  # dynamic JAX scalar
 
-        # Write each slot individually; skip if out of bounds.
-        for i in range(n_parallel):
-            slot = n + i  # dynamic JAX scalar
-            state = jax.lax.cond(
+        # Use fori_loop to write each slot without unrolling into n_parallel separate
+        # cond nodes in the XLA graph (avoids linear compile-time growth with n_parallel).
+        def body(i, s):
+            slot = n + i
+            x_row = jax.lax.dynamic_slice(x_new, (i, 0), (1, n_params))
+            y_scalar = jax.lax.dynamic_slice(results, (i,), (1,))
+            return jax.lax.cond(
                 slot < n_max,
-                lambda s, slot=slot, i=i: s.replace(
-                    X=jax.lax.dynamic_update_slice(s.X, x_new[i : i + 1], (slot, 0)),
-                    y=jax.lax.dynamic_update_slice(s.y, results[i : i + 1], (slot,)),
+                lambda s: s.replace(
+                    X=jax.lax.dynamic_update_slice(s.X, x_row, (slot, 0)),
+                    y=jax.lax.dynamic_update_slice(s.y, y_scalar, (slot,)),
                     mask=jax.lax.dynamic_update_slice(
                         s.mask, jnp.ones(1, dtype=bool), (slot,)
                     ),
                 ),
                 lambda s: s,
-                state,
+                s,
             )
+
+        state = jax.lax.fori_loop(0, n_parallel, body, state)
 
         if self.n_hparam_steps > 0:
             log_ls = jax.lax.cond(
@@ -363,76 +366,22 @@ class BayesianSearch(Optimizer):
         return state
 
     def _n_iterations(self, state):
-        """Number of optimize iterations derived from buffer capacity and n_parallel."""
+        """Number of optimize iterations derived from buffer capacity and n_parallel.
+
+        Note: int(state.mask.sum()) forces a device sync — acceptable here since
+        optimize() is a Python loop.
+        """
         remaining = state.X.shape[0] - int(state.mask.sum())
         n_full = remaining // self.n_parallel
         has_overflow = (remaining % self.n_parallel) > 0
         return n_full + (1 if has_overflow else 0)
 
-    def optimize_scan(self, state, key, func, n_iterations=None):
-        """Like the base optimize_scan but uses jax.lax.scan.
-
-        BayesianSearch.get_next_params returns (batch_params, xs_raw) instead
-        of just batch_params, so we override to unpack xs_raw and pass it to
-        update_state.  Because get_next_params is now fully JAX-traceable this
-        method is JIT-able and vmap-able.
-        """
-        _validate_func(func)
+    def optimize(self, state, key, func, n_iterations=None):
         if n_iterations is None:
             n_iterations = self._n_iterations(state)
+        return super().optimize(state, key, func, n_iterations)
 
-        # Step 0 outside scan to infer pytree structure / shapes for the carry.
-        key, key_get, key_funcs, key_update = jax.random.split(key, 4)
-        params0, x_new0 = self.get_next_params(state, key_get, None, None)
-        func_keys0 = jax.random.split(key_funcs, self.n_parallel)
-        results0 = jax.vmap(func)(func_keys0, params0)
-        state = self.update_state(state, key_update, results0, x_new0)
-        first_params, first_results = params0, results0
-
-        def step(carry, _):
-            state, key, params, results, x_new = carry
-            key, key_get, key_funcs, key_update = jax.random.split(key, 4)
-            params, x_new = self.get_next_params(state, key_get, params, results)
-            func_keys = jax.random.split(key_funcs, self.n_parallel)
-            results = jax.vmap(func)(func_keys, params)
-            state = self.update_state(state, key_update, results, x_new)
-            return (state, key, params, results, x_new), (params, results)
-
-        (final_state, _, _, _, _), (params_hist, results_hist) = jax.lax.scan(
-            step,
-            (state, key, params0, results0, x_new0),
-            None,
-            length=n_iterations - 1,
-        )
-
-        params_hist = jax.tree.map(
-            lambda first, rest: jnp.concatenate([first[None], rest]),
-            first_params,
-            params_hist,
-        )
-        results_hist = jnp.concatenate([first_results[None], results_hist])
-        return final_state, (params_hist, results_hist)
-
-    def optimize(self, state, key, func):
-        """Run Bayesian optimisation until the observation buffer is full.
-
-        The number of iterations is derived from the buffer capacity:
-        ``n_max // n_parallel`` full iterations plus one overflow iteration if
-        ``n_max % n_parallel != 0``.  In the overflow iteration all
-        ``n_parallel`` candidates are evaluated but only the remaining slots in
-        the buffer are stored.
-        """
-        _validate_func(func)
-        n_iterations = self._n_iterations(state)
-        params_hist, results_hist = [], []
-        params, results = None, None
-        for _ in range(n_iterations):
-            key, key_get, key_funcs, key_update = jax.random.split(key, 4)
-            params, x_new = self.get_next_params(state, key_get, params, results)
-            func_keys = jax.random.split(key_funcs, self.n_parallel)
-            results = jax.vmap(func)(func_keys, params)  # (n_parallel,)
-            state = self.update_state(state, key_update, results, x_new)
-            params_hist.append(params)
-            results_hist.append(results)
-
-        return state, (params_hist, results_hist)
+    def optimize_scan(self, state, key, func, n_iterations=None):
+        if n_iterations is None:
+            n_iterations = self._n_iterations(state)
+        return super().optimize_scan(state, key, func, n_iterations)

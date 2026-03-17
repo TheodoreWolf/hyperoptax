@@ -1,6 +1,15 @@
 # Optimizers
 # Acquisition functions
-from hyperoptax.acquisition import EI, PI, UCB
+from hyperoptax.acquisition import (
+    EI,
+    PI,
+    UCB,
+    BaseHallucination,
+    MeanHallucination,
+    SampleHallucination,
+    UCBHallucination,
+    ConstantHallucination,
+)
 from hyperoptax.bayesian import BayesianSearch
 from hyperoptax.grid import GridSearch
 
@@ -32,6 +41,11 @@ __all__ = [
     "EI",
     "PI",
     "UCB",
+    "BaseHallucination",
+    "MeanHallucination",
+    "SampleHallucination",
+    "UCBHallucination",
+    "ConstantHallucination",
     # Kernels
     "Matern",
     "RBF",

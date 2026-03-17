@@ -13,7 +13,6 @@ class TestRBF:
     def test_rbf_with_same_points(self):
         kernel = RBF(length_scale=1.0)
         # correlation matrix should be all ones
-        assert jnp.allclose(kernel(x, x), kernel.diag(x))
         assert jnp.allclose(kernel(x, x), jnp.full((3, 3), 1.0))
 
     def test_rbf_with_different_points(self):
@@ -86,8 +85,3 @@ class TestBaseKernel:
         with pytest.raises(NotImplementedError):
             MinimalKernel()(x, y)
 
-    def test_rbf_diag_returns_ones(self):
-        kernel = RBF(length_scale=1.0)
-        d = kernel.diag(x)
-        assert d.shape == (3,)
-        assert jnp.allclose(d, jnp.ones(3))

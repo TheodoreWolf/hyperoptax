@@ -43,11 +43,8 @@ class RBF(BaseKernel):
         ls = self.length_scale if length_scale is None else length_scale
         return jnp.exp(-(cdist(x, y) ** 2) / (2 * ls**2))
 
-    def diag(self, x: jax.Array) -> jax.Array:
-        return jnp.ones(x.shape[0])
 
-
-class Matern(RBF):
+class Matern(BaseKernel):
     """Matern kernel family.
 
     Parameters
