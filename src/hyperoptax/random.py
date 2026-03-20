@@ -4,22 +4,21 @@ import jax
 import jax.numpy as jnp
 from flax import struct
 
+from hyperoptax import base, utils
 from hyperoptax import spaces as sp
-from hyperoptax import utils
-from hyperoptax.base import Optimizer, OptimizerState
 
 
 @dataclasses.dataclass
-class RandomSearch(Optimizer):
+class RandomSearch(base.Optimizer):
     n_parallel: int = 1
 
     @classmethod
     def init(cls, space, **kwargs):
-        return OptimizerState(space=space), cls(**kwargs)
+        return base.OptimizerState(space=space), cls(**kwargs)
 
     def get_next_params(
         self,
-        state: OptimizerState,
+        state: base.OptimizerState,
         key: jax.random.PRNGKey,
         params=None,
         results=None,
@@ -41,11 +40,11 @@ class RandomSearch(Optimizer):
 
     def update_state(
         self,
-        state: OptimizerState,
+        state: base.OptimizerState,
         key: jax.random.PRNGKey,
         results: jax.Array,
         params=None,
-    ) -> OptimizerState:
+    ) -> base.OptimizerState:
         """
         RandomSearch is memoryless, no state to update.
         """

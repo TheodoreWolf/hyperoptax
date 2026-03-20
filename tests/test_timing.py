@@ -4,8 +4,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from hyperoptax import bayesian
 from hyperoptax import spaces as sp
-from hyperoptax.bayesian import BayesianSearch
 
 
 @pytest.mark.timing
@@ -14,9 +14,13 @@ class TestBayesianTiming:
 
     def _make_state_with_obs(self, optimizer, n_obs=5):
         key = jax.random.PRNGKey(0)
-        state, _ = BayesianSearch.init(
-            self.SPACE, n_max=50, n_candidates=500, n_restarts=3,
-            n_lbfgs_steps=20, n_hparam_steps=0
+        state, _ = bayesian.BayesianSearch.init(
+            self.SPACE,
+            n_max=50,
+            n_candidates=500,
+            n_restarts=3,
+            n_lbfgs_steps=20,
+            n_hparam_steps=0,
         )
         for i in range(n_obs):
             x = jnp.array([[i * 0.2, i * 0.15]])
@@ -24,9 +28,13 @@ class TestBayesianTiming:
         return state
 
     def test_get_next_params_throughput(self, capsys):
-        _, optimizer = BayesianSearch.init(
-            self.SPACE, n_max=50, n_candidates=500,
-            n_restarts=3, n_lbfgs_steps=20, n_hparam_steps=0
+        _, optimizer = bayesian.BayesianSearch.init(
+            self.SPACE,
+            n_max=50,
+            n_candidates=500,
+            n_restarts=3,
+            n_lbfgs_steps=20,
+            n_hparam_steps=0,
         )
         state = self._make_state_with_obs(optimizer)
         key = jax.random.PRNGKey(1)
@@ -47,11 +55,15 @@ class TestBayesianTiming:
 
     def test_optimize_throughput(self, capsys):
         n_max = 20
-        _, optimizer = BayesianSearch.init(
-            self.SPACE, n_max=n_max, n_candidates=500,
-            n_restarts=3, n_lbfgs_steps=20, n_hparam_steps=0
+        _, optimizer = bayesian.BayesianSearch.init(
+            self.SPACE,
+            n_max=n_max,
+            n_candidates=500,
+            n_restarts=3,
+            n_lbfgs_steps=20,
+            n_hparam_steps=0,
         )
-        state, _ = BayesianSearch.init(self.SPACE, n_max=n_max)
+        state, _ = bayesian.BayesianSearch.init(self.SPACE, n_max=n_max)
         func = lambda key, cfg: -(cfg["x"] ** 2 + cfg["y"] ** 2)
         t0 = time.perf_counter()
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)

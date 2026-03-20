@@ -92,7 +92,10 @@ class MeanHallucination(BaseHallucination):
 
 
 class SampleHallucination(BaseHallucination):
-    """Randomized Kriging Believer (RKB, arXiv 2603.01470): hallucinate with a posterior sample."""
+    """Randomized Kriging Believer (RKB): hallucinate with a posterior sample.
+
+    arXiv 2603.01470.
+    """
 
     def __call__(self, mean, std, key, y_max):
         return mean[0] + std[0] * jax.random.normal(key)

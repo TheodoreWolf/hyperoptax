@@ -6,21 +6,15 @@ import jax.numpy as jnp
 import optax
 from flax import struct
 
+from hyperoptax import acquisition as acq
+from hyperoptax import base, kernels
 from hyperoptax import spaces as sp
-from hyperoptax.acquisition import (
-    EI,
-    BaseAcquisition,
-    BaseHallucination,
-    MeanHallucination,
-)
-from hyperoptax.base import Optimizer, OptimizerState
-from hyperoptax.kernels import BaseKernel, Matern
 
 MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from GP fit
 
 
 @struct.dataclass
-class BayesianSearchState(OptimizerState):
+class BayesianSearchState(base.OptimizerState):
     X: jax.Array  # (n_max, n_params) padded with zeros
     y: jax.Array  # (n_max,) padded with zeros — raw (un-negated) results
     mask: jax.Array  # (n_max,) bool, True for valid entries
@@ -28,13 +22,13 @@ class BayesianSearchState(OptimizerState):
 
 
 @dataclasses.dataclass
-class BayesianSearch(Optimizer):
+class BayesianSearch(base.Optimizer):
     jitter: float = 1e-6
-    kernel: BaseKernel = dataclasses.field(
-        default_factory=lambda: Matern(length_scale=1.0, nu=2.5)
+    kernel: kernels.BaseKernel = dataclasses.field(
+        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=2.5)
     )
-    acquisition: BaseAcquisition = dataclasses.field(
-        default_factory=lambda: EI(xi=0.01)
+    acquisition: acq.BaseAcquisition = dataclasses.field(
+        default_factory=lambda: acq.EI(xi=0.01)
     )
     n_candidates: int = 1000  # random candidates sampled for continuous spaces
     n_restarts: int = 2  # number of L-BFGS restarts (seeded from top candidates)
@@ -43,7 +37,9 @@ class BayesianSearch(Optimizer):
     n_warmup: int = 1  # pure-random evaluations before GP kicks in
     maximize: bool = True  # set False to minimize the objective
     n_parallel: int = 1
-    hallucination: BaseHallucination = dataclasses.field(default_factory=MeanHallucination)
+    hallucination: acq.BaseHallucination = dataclasses.field(
+        default_factory=acq.MeanHallucination
+    )
 
     @classmethod
     def init(cls, space, n_max=200, **kwargs):
@@ -243,8 +239,10 @@ class BayesianSearch(Optimizer):
             def _lbfgs_restart(carry, x0):
                 best_x, best_val = carry
                 (x_refined, _), _ = jax.lax.scan(
-                    lbfgs_step, (x0, solver.init(x0)), None,
-                    length=self.n_lbfgs_steps
+                    lbfgs_step,
+                    (x0, solver.init(x0)),
+                    None,
+                    length=self.n_lbfgs_steps,
                 )
                 mean_r, std_r = self._gp_predict(
                     x_refined[None], L, alpha, ymean, X_ext, length_scale

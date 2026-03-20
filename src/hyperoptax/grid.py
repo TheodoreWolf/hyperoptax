@@ -4,18 +4,18 @@ import jax
 import jax.numpy as jnp
 from flax import struct
 
+from hyperoptax import base
 from hyperoptax import spaces as sp
-from hyperoptax.base import Optimizer, OptimizerState
 
 
 @struct.dataclass
-class GridSearchState(OptimizerState):
+class GridSearchState(base.OptimizerState):
     grid: jax.Array
     grid_idx: int
 
 
 @dataclasses.dataclass
-class GridSearch(Optimizer):
+class GridSearch(base.Optimizer):
     shuffle: bool = False
     n_parallel: int = 1
 
