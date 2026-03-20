@@ -54,7 +54,7 @@ search_space = {
 state, optimizer = BayesianSearch.init(
     search_space,
     n_max=100,       # observation buffer size (= number of iterations)
-    n_parallel=4,    # Kriging Believer batch size
+    n_parallel=4,    # Parallel workers per step
     maximize=False,
 )
 
@@ -81,7 +81,7 @@ state, optimizer = RandomSearch.init(search_space, n_parallel=8)
 state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=50)
 
 # Grid search (DiscreteSpace only)
-# Note: shuffle=True with no key argument uses PRNGKey(0); pass key explicitly for reproducibility.
+# Note: shuffle=True
 grid_space = {"lr": DiscreteSpace([1e-4, 1e-3, 1e-2]), "dropout": DiscreteSpace([0.1, 0.3, 0.5])}
 state, optimizer = GridSearch.init(grid_space)
 state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=9)
@@ -141,7 +141,6 @@ uv run pytest
 ## Roadmap
 I'm developing this both as a passion project and for my work in my PhD. I have a few ideas on where to go with this library:
 - Callbacks!
-- Some clumpiness in the acquisition function; there is literature that can help.
 - Reduce redundant kernel recomputation — currently the full K matrix is rebuilt each iteration when only the new row/column is needed.
 - Length scale tuning currently uses a fixed Adam step count; smarter convergence criteria could help.
 
