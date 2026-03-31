@@ -10,6 +10,15 @@ from hyperoptax import spaces as sp
 
 @dataclasses.dataclass
 class RandomSearch(base.Optimizer):
+    """Stateless random search — samples each space independently each iteration.
+
+    No model is fitted and no history is maintained, so this is the cheapest
+    optimizer and useful as a strong baseline.
+
+    Attributes:
+        n_parallel: Number of random configurations evaluated per iteration.
+    """
+
     n_parallel: int = 1
 
     @classmethod
@@ -23,6 +32,7 @@ class RandomSearch(base.Optimizer):
         params=None,
         results=None,
     ) -> struct.PyTreeNode:
+        """Sample ``n_parallel`` independent configurations from the search space."""
         def sample_once(k):
             subkeys = utils.make_key_tree(state.space, k)
             sample = jax.tree.map(

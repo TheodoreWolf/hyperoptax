@@ -15,6 +15,22 @@ MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from
 
 @struct.dataclass
 class BayesianSearchState(base.OptimizerState):
+    """State for :class:`BayesianSearch`.
+
+    All arrays are fixed-size (shape determined by ``n_max`` at init time) to
+    satisfy JAX's static-shape requirement. The ``mask`` field tracks which
+    entries have been written.
+
+    Attributes:
+        X: Observation inputs, shape ``(n_max, n_params)``, zero-padded.
+        y: Observed results, shape ``(n_max,)``, zero-padded, stored as raw
+            (un-negated) values regardless of ``maximize``.
+        mask: Boolean validity mask, shape ``(n_max,)``; ``True`` for slots
+            that contain real observations.
+        log_length_scale: Per-dimension ARD length scales in log space,
+            shape ``(n_params,)``. Tuned by Adam each iteration.
+    """
+
     X: jax.Array  # (n_max, n_params) padded with zeros
     y: jax.Array  # (n_max,) padded with zeros — raw (un-negated) results
     mask: jax.Array  # (n_max,) bool, True for valid entries
@@ -23,6 +39,36 @@ class BayesianSearchState(base.OptimizerState):
 
 @dataclasses.dataclass
 class BayesianSearch(base.Optimizer):
+    """Bayesian optimisation with a Gaussian Process surrogate.
+
+    Uses a GP (Matérn 2.5 kernel by default) to model the objective and
+    selects the next batch of candidates by maximising an acquisition function
+    (EI by default). ARD length scales are tuned with Adam each iteration.
+    Parallel batches are generated via the Kriging Believer hallucination
+    strategy.
+
+    Attributes:
+        jitter: Small diagonal added to the kernel matrix for numerical
+            stability (default ``1e-6``).
+        kernel: Kernel function (default :class:`~hyperoptax.kernels.Matern`
+            with ``nu=2.5``).
+        acquisition: Acquisition function (default
+            :class:`~hyperoptax.acquisition.EI` with ``xi=0.01``).
+        n_candidates: Number of random candidates sampled per iteration for
+            the discrete pre-selection step (default ``1000``).
+        n_restarts: Number of L-BFGS restarts seeded from the top candidates
+            (default ``2``).
+        n_lbfgs_steps: Gradient steps per L-BFGS restart (default ``10``).
+        n_hparam_steps: Adam steps used to tune ``log_length_scale`` each
+            iteration (default ``20``). Set to ``0`` to disable.
+        n_warmup: Number of pure-random iterations before the GP is used
+            (default ``1``).
+        maximize: Set ``False`` to minimise the objective (default ``True``).
+        n_parallel: Number of parallel candidates per iteration (default ``1``).
+        hallucination: Hallucination strategy for Kriging Believer parallel
+            selection (default :class:`~hyperoptax.acquisition.MeanHallucination`).
+    """
+
     jitter: float = 1e-6
     kernel: kernels.BaseKernel = dataclasses.field(
         default_factory=lambda: kernels.Matern(length_scale=1.0, nu=2.5)
@@ -311,6 +357,13 @@ class BayesianSearch(base.Optimizer):
         return batch_params
 
     def get_next_params(self, state, key, params=None, results=None):
+        """Select the next batch of ``n_parallel`` candidates.
+
+        During the first ``n_warmup`` iterations, candidates are chosen
+        uniformly at random. Afterwards, the GP posterior is used to maximise
+        the acquisition function via L-BFGS with Kriging Believer hallucination
+        for the parallel slots.
+        """
         return self._select_next_x(state, key)
 
     def _write_observation_batch(self, state, x_new, results, n):
@@ -343,12 +396,20 @@ class BayesianSearch(base.Optimizer):
         return jax.lax.fori_loop(0, n_parallel, body, state)
 
     def update_state(self, state, key, results, params):
-        """
+        """Record new observations and update ARD length scales.
+
+        Writes the batch of results into the fixed-size state buffers and,
+        if ``n_hparam_steps > 0``, runs a short Adam loop to tune
+        ``log_length_scale`` via marginal-likelihood maximisation.
+
         Args:
-            results: (n_parallel,) array of observed results
-            params: either the batched params pytree from get_next_params
-                    (each leaf shape (n_parallel,)) or a raw (n_parallel, n_params)
-                    flat array.
+            state: Current :class:`BayesianSearchState`.
+            key: PRNG key (unused but kept for API consistency).
+            results: Array of shape ``(n_parallel,)`` with observed objective
+                values.
+            params: Either the batched params pytree returned by
+                :meth:`get_next_params` (each leaf shape ``(n_parallel,)``), or
+                a raw ``(n_parallel, n_params)`` flat array.
         """
         results = jnp.atleast_1d(jnp.squeeze(results))
         n_parallel = results.shape[0]  # static Python int

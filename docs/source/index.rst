@@ -21,21 +21,29 @@ Quick Start
 
 .. code-block:: python
 
-   from hyperoptax.bayesian import BayesianOptimizer
-   from hyperoptax.spaces import LogSpace, LinearSpace
+   import jax
+   from hyperoptax import BayesianSearch, LogSpace, LinearSpace
 
-   @jax.jit
-   def train_nn(learning_rate, final_lr_pct):
+   def train_nn(key, params):
+       learning_rate = params["learning_rate"]
+       final_lr_pct = params["final_lr_pct"]
        ...
-       return val_loss
+       return val_loss  # scalar, lower is better
 
-   search_space = {"learning_rate": LogSpace(1e-5,1e-1, 100),
-                   "final_lr_pct": LinearSpace(0.01, 0.5, 100)}
+   search_space = {
+       "learning_rate": LogSpace(1e-5, 1e-1),
+       "final_lr_pct": LinearSpace(0.01, 0.5),
+   }
 
-   search = BayesianOptimizer(search_space, train_nn)
-   best_params = search.optimize(n_iterations=100, 
-                                 n_parallel=10, 
-                                 maximize=False)
+   state, optimizer = BayesianSearch.init(
+       search_space,
+       n_max=100,
+       maximize=False,
+   )
+   state, (params_hist, results_hist) = optimizer.optimize(
+       state, jax.random.PRNGKey(0), train_nn
+   )
+   print(optimizer.best_params(state))
 
 .. toctree::
    :maxdepth: 2

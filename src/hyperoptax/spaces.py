@@ -9,7 +9,7 @@ def log_transform(x: float, base: float) -> float:
 
 
 class Space(struct.PyTreeNode):
-    pass
+    """Abstract base class for hyperparameter search spaces."""
 
     def sample(self, key: jax.random.PRNGKey) -> jax.Array:
         raise NotImplementedError
@@ -19,6 +19,13 @@ class Space(struct.PyTreeNode):
 
 
 class LinearSpace(Space):
+    """Uniform continuous space over ``[lower_bound, upper_bound]``.
+
+    Attributes:
+        lower_bound: Inclusive lower bound of the interval.
+        upper_bound: Exclusive upper bound of the interval.
+    """
+
     lower_bound: float = struct.field(pytree_node=False)
     upper_bound: float = struct.field(pytree_node=False)
 
@@ -36,6 +43,16 @@ class LinearSpace(Space):
 
 
 class DiscreteSpace(Space):
+    """Discrete space over a fixed set of values.
+
+    Samples uniformly from ``values``. ``transform`` snaps any continuous
+    value to the nearest element, which is useful when discrete candidates
+    are generated via continuous optimization (e.g. in ``BayesianSearch``).
+
+    Attributes:
+        values: Tuple of candidate values to sample from.
+    """
+
     values: tuple = struct.field(pytree_node=False)
 
     @property
@@ -60,6 +77,18 @@ class DiscreteSpace(Space):
 
 
 class LogSpace(LinearSpace):
+    """Log-uniform continuous space over ``[lower_bound, upper_bound]``.
+
+    Samples uniformly in log space so that each order of magnitude receives
+    equal probability mass. Useful for learning rates and other scale
+    parameters that span several orders of magnitude.
+
+    Attributes:
+        lower_bound: Inclusive lower bound (in original scale, e.g. ``1e-5``).
+        upper_bound: Exclusive upper bound (in original scale, e.g. ``1e-1``).
+        base: Logarithm base (default ``10``). Must be greater than 1.
+    """
+
     base: float = struct.field(pytree_node=False, default=10)
 
     def __post_init__(
@@ -83,6 +112,18 @@ class LogSpace(LinearSpace):
 # TODO: maybe use something more robust than astype?
 # TODO: can we do something with mixins? Currently hitting some ordering problems
 class QLinearSpace(LinearSpace):
+    """Quantized (integer) variant of :class:`LinearSpace`.
+
+    Samples uniformly from ``[lower_bound, upper_bound]`` and rounds to the
+    nearest integer. Use this for discrete integer hyperparameters with a
+    uniform prior (e.g. number of layers, batch size).
+
+    Attributes:
+        lower_bound: Inclusive lower bound.
+        upper_bound: Exclusive upper bound.
+        datatype: Integer dtype used after rounding (default ``jnp.int32``).
+    """
+
     datatype: type = struct.field(pytree_node=False, default=jnp.int32)
 
     def transform(self, value) -> jax.Array:
@@ -90,4 +131,11 @@ class QLinearSpace(LinearSpace):
 
 
 class QLogSpace(LogSpace, QLinearSpace):
+    """Quantized (integer) variant of :class:`LogSpace`.
+
+    Samples in log space and rounds to the nearest integer. Use this for
+    integer hyperparameters whose scale spans orders of magnitude
+    (e.g. number of hidden units, number of warmup steps).
+    """
+
     pass

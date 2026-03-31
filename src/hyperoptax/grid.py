@@ -10,17 +10,51 @@ from hyperoptax import spaces as sp
 
 @struct.dataclass
 class GridSearchState(base.OptimizerState):
+    """State for :class:`GridSearch`.
+
+    Attributes:
+        grid: Array of shape ``(n_total, n_params)`` containing all parameter
+            combinations, pre-truncated to a multiple of ``n_parallel``.
+        grid_idx: Current position in ``grid``; incremented by ``n_parallel``
+            after each call to ``update_state``.
+    """
+
     grid: jax.Array
     grid_idx: int
 
 
 @dataclasses.dataclass
 class GridSearch(base.Optimizer):
+    """Exhaustive grid search over a discrete search space.
+
+    Iterates through every combination of the provided ``DiscreteSpace`` values
+    in order (or randomly if ``shuffle=True``). All spaces in the search space
+    must be :class:`~hyperoptax.spaces.DiscreteSpace`.
+
+    Attributes:
+        shuffle: If ``True``, randomise the traversal order during ``init``.
+            Pass an explicit ``key`` to ``init`` for reproducibility.
+        n_parallel: Number of grid points evaluated per iteration.
+    """
+
     shuffle: bool = False
     n_parallel: int = 1
 
     @classmethod
     def init(cls, space, key=None, **kwargs):
+        """Initialise the grid search.
+
+        Args:
+            space: A pytree of :class:`~hyperoptax.spaces.DiscreteSpace` objects.
+                All leaves must be ``DiscreteSpace``; mixed spaces are not supported.
+            key: Optional PRNG key used when ``shuffle=True``. Falls back to
+                ``PRNGKey(0)`` when ``None``.
+            **kwargs: Forwarded to :class:`GridSearch` constructor (e.g. ``n_parallel``,
+                ``shuffle``).
+
+        Returns:
+            ``(state, optimizer)`` tuple.
+        """
         is_discrete = jax.tree.map(
             lambda x: isinstance(x, sp.DiscreteSpace),
             space,
@@ -53,6 +87,7 @@ class GridSearch(base.Optimizer):
     def get_next_params(
         self, state: GridSearchState, key, params=None, results=None
     ) -> struct.PyTreeNode:
+        """Return the next ``n_parallel`` parameter combinations from the grid."""
         # Only check eagerly; inside lax.scan grid_idx is an abstract tracer.
         if not isinstance(state.grid_idx, jax.core.Tracer):
             if int(state.grid_idx) + self.n_parallel > state.grid.shape[0]:
@@ -74,4 +109,5 @@ class GridSearch(base.Optimizer):
     def update_state(
         self, state: GridSearchState, key, results, params=None
     ) -> GridSearchState:
+        """Advance the grid index by ``n_parallel``."""
         return state.replace(grid_idx=state.grid_idx + self.n_parallel)

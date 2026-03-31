@@ -37,8 +37,7 @@ All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(s
 
 ```python
 import jax
-from hyperoptax.bayesian import BayesianSearch
-from hyperoptax.spaces import LogSpace, LinearSpace
+from hyperoptax import BayesianSearch, LogSpace, LinearSpace
 
 def train_nn(key, params):
     learning_rate = params["learning_rate"]
@@ -72,9 +71,7 @@ print(optimizer.best_params(state))
 Other available optimizers:
 
 ```python
-from hyperoptax.random import RandomSearch
-from hyperoptax.grid import GridSearch
-from hyperoptax.spaces import DiscreteSpace
+from hyperoptax import RandomSearch, GridSearch, DiscreteSpace
 
 # Random search
 state, optimizer = RandomSearch.init(search_space, n_parallel=8)

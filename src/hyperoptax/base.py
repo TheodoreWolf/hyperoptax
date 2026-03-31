@@ -37,6 +37,8 @@ def _validate_func(func):
 
 @struct.dataclass
 class OptimizerState:
+    """Base optimizer state — a Flax PyTree holding the search space definition."""
+
     space: struct.PyTreeNode
 
 

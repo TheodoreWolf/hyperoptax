@@ -11,22 +11,30 @@ Parameter spaces define the search domains for hyperparameter optimization.
 Examples
 --------
 
-Creating Linear Space
-~~~~~~~~~~~~~~~~~~~~~~
+Creating a Linear Space
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
-   from hyperoptax.spaces import LinearSpace
-   
-   # Create a linear space from 0.01 to 1.0 with 100 points
-   lr_space = LinearSpace(0.01, 1.0, 100)
+   from hyperoptax import LinearSpace
 
-Creating Logarithmic Space
+   dropout_space = LinearSpace(0.0, 0.5)
+
+Creating a Logarithmic Space
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from hyperoptax import LogSpace
+
+   lr_space = LogSpace(1e-5, 1e-1)
+
+Creating a Discrete Space
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
-   from hyperoptax.spaces import LogSpace
-   
-   # Create a log space from 1e-5 to 1e-1 with 50 points
-   lr_space = LogSpace(1e-5, 1e-1, 50) 
+   from hyperoptax import DiscreteSpace
+
+   optimizer_space = DiscreteSpace(["adam", "sgd", "rmsprop"])
+   lr_space = DiscreteSpace([1e-4, 1e-3, 1e-2])

@@ -25,4 +25,12 @@ Grid Search
 .. automodule:: hyperoptax.grid
    :members:
    :undoc-members:
-   :show-inheritance: 
+   :show-inheritance:
+
+Random Search
+-------------
+
+.. automodule:: hyperoptax.random
+   :members:
+   :undoc-members:
+   :show-inheritance:
