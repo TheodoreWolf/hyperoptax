@@ -1,176 +1,141 @@
-from dataclasses import dataclass
-
 import jax
 import jax.numpy as jnp
+from flax import struct
 
 
-@dataclass
-class BaseSpace:
-    """Base class for one-dimensional search spaces.
+# transformation between logs
+def log_transform(x: float, base: float) -> float:
+    return jnp.log(x) / jnp.log(base)
 
-    A *search space* is a discrete 1-D grid of numeric values that a
-    hyper-parameter can take.  Sub-classes must implement the
-    :pyattr:`array` property that returns a 1-D :class:`jax.Array` with
-    length ``n_points``.
 
-    Attributes
-    ----------
-    start : float | int
-        Inclusive lower bound of the space.
-    end : float | int
-        Inclusive upper bound of the space.
-    n_points : int
-        Number of discrete values between ``start`` and ``end``.
-    """
+class Space(struct.PyTreeNode):
+    """Abstract base class for hyperparameter search spaces."""
 
-    start: float | int
-    end: float | int
-    n_points: float | int
-
-    def __len__(self) -> int:
-        return self.n_points
-
-    @property
-    def array(self) -> jax.Array:
+    def sample(self, key: jax.random.PRNGKey) -> jax.Array:
         raise NotImplementedError
 
-    def __getitem__(self, idx: int) -> jax.Array:
-        return self.array[idx]
-
-    def __iter__(self):
-        return iter(self.array)
+    def transform(self, value):
+        return value
 
 
-@dataclass
-class ArbitrarySpace:
-    """Search space defined by an *explicit* list of values.
+class LinearSpace(Space):
+    """Uniform continuous space over ``[lower_bound, upper_bound]``.
 
-    Parameters
-    ----------
-    values : list[float | int]
-        A sequence of numeric values.
-    name : str, default = "arbitrary_space"
-        Human-readable identifier.
+    Attributes:
+        lower_bound: Inclusive lower bound of the interval.
+        upper_bound: Exclusive upper bound of the interval.
     """
 
-    values: list[int | float]
-    name: str = "arbitrary_space"
+    lower_bound: float = struct.field(pytree_node=False)
+    upper_bound: float = struct.field(pytree_node=False)
 
     def __post_init__(self):
-        assert self.array.ndim == 1, (
-            "I don't support arrays that aren't one dimensional (yet), "
-            "try entering each dimension as a separate space."
+        assert self.lower_bound < self.upper_bound, (
+            "lower_bound is greater or equal to upper_bound."
         )
-        self.start = jnp.min(self.array)
-        self.end = jnp.max(self.array)
-        self.n_points = len(self.array)
 
-    @property
-    def array(self) -> jax.Array:
-        return jnp.array(self.values)
+    def sample(self, key: jax.random.PRNGKey) -> float:
+        return self.transform(
+            jax.random.uniform(
+                key, shape=(1,), minval=self.lower_bound, maxval=self.upper_bound
+            )
+        )
 
 
-@dataclass
-class LinearSpace(BaseSpace):
-    """Linearly spaced grid between ``start`` and ``end``.
+class DiscreteSpace(Space):
+    """Discrete space over a fixed set of values.
 
-    All constructor arguments are inherited from :class:`BaseSpace`.
+    Samples uniformly from ``values``. ``transform`` snaps any continuous
+    value to the nearest element, which is useful when discrete candidates
+    are generated via continuous optimization (e.g. in ``BayesianSearch``).
+
+    Attributes:
+        values: Tuple of candidate values to sample from.
     """
 
-    name: str = "linear_space"
+    values: tuple = struct.field(pytree_node=False)
 
     @property
-    def array(self) -> jax.Array:
-        return jnp.linspace(self.start, self.end, self.n_points)
+    def lower_bound(self) -> float:
+        return float(min(self.values))
+
+    @property
+    def upper_bound(self) -> float:
+        return float(max(self.values))
+
+    def sample(self, key: jax.random.PRNGKey) -> float:
+        return self.transform(
+            jax.random.choice(key, jnp.array(self.values), shape=(1,))
+        )
+
+    def transform(self, value) -> jax.Array:
+        vals = jnp.array(self.values)
+        value = jnp.asarray(value)
+        flat = jnp.ravel(value)
+        snapped = vals[jnp.argmin(jnp.abs(vals[:, None] - flat[None, :]), axis=0)]
+        return snapped.reshape(value.shape)
 
 
-@dataclass
-class LogSpace(BaseSpace):
-    """Logarithmically spaced grid.
+class LogSpace(LinearSpace):
+    """Log-uniform continuous space over ``[lower_bound, upper_bound]``.
 
-    Values are spaced evenly in log-space with a configurable ``base``.
+    Samples uniformly in log space so that each order of magnitude receives
+    equal probability mass. Useful for learning rates and other scale
+    parameters that span several orders of magnitude.
 
-    Additional Parameters
-    ---------------------
-    base : float | int, default = 10
-        Logarithm base.
+    Attributes:
+        lower_bound: Inclusive lower bound (in original scale, e.g. ``1e-5``).
+        upper_bound: Exclusive upper bound (in original scale, e.g. ``1e-1``).
+        base: Logarithm base (default ``10``). Must be greater than 1.
     """
 
-    base: float | int = 10
-    name: str = "log_space"
+    base: float = struct.field(pytree_node=False, default=10)
 
-    def __post_init__(self):
-        # JAX silently converts negative numbers to nan
-        assert self.start > 0 and self.end > 0 and self.base > 0, (
-            "Log space must be positive and have a positive log base."
+    def __post_init__(
+        self,
+    ):
+        super().__post_init__()
+        assert self.base > 1, "Log base must be greater than 1"
+
+    def sample(self, key: jax.random.PRNGKey) -> float:
+        return self.transform(
+            self.base
+            ** jax.random.uniform(
+                key,
+                shape=(1,),
+                minval=log_transform(self.lower_bound, self.base),
+                maxval=log_transform(self.upper_bound, self.base),
+            )
         )
 
-    @property
-    def array(self) -> jax.Array:
-        log_space = jnp.linspace(
-            self.log(self.start), self.log(self.end), self.n_points
-        )
-        return self.base**log_space
 
-    def log(self, x: float) -> float:
-        # conersion of log base
-        return jnp.log(x) / jnp.log(self.base)
+# TODO: maybe use something more robust than astype?
+# TODO: can we do something with mixins? Currently hitting some ordering problems
+class QLinearSpace(LinearSpace):
+    """Quantized (integer) variant of :class:`LinearSpace`.
 
+    Samples uniformly from ``[lower_bound, upper_bound]`` and rounds to the
+    nearest integer. Use this for discrete integer hyperparameters with a
+    uniform prior (e.g. number of layers, batch size).
 
-@dataclass
-class ExpSpace(LogSpace):
-    """Inverse of :class:`LogSpace`.
-
-    Returns ``base ** linspace(start, end, n_points)``.
+    Attributes:
+        lower_bound: Inclusive lower bound.
+        upper_bound: Exclusive upper bound.
+        datatype: Integer dtype used after rounding (default ``jnp.int32``).
     """
 
-    base: float | int = 10
-    name: str = "exp_space"
+    datatype: type = struct.field(pytree_node=False, default=jnp.int32)
 
-    def __post_init__(self):
-        # JAX silently converts negative numbers to nan
-        assert self.base > 0, "Base must be positive."
-
-    @property
-    def array(self) -> jax.Array:
-        return self.log(
-            jnp.linspace(self.base**self.start, self.base**self.end, self.n_points)
-        )
+    def transform(self, value) -> jax.Array:
+        return jnp.round(value).astype(self.datatype)
 
 
-@dataclass
-class QuantizedLinearSpace:
-    """Linearly spaced grid with a fixed *step size*.
+class QLogSpace(LogSpace, QLinearSpace):
+    """Quantized (integer) variant of :class:`LogSpace`.
 
-    Instead of specifying ``n_points`` directly, the resolution is derived
-    from a ``quantization_factor`` (i.e. the distance between two
-    consecutive values).
+    Samples in log space and rounds to the nearest integer. Use this for
+    integer hyperparameters whose scale spans orders of magnitude
+    (e.g. number of hidden units, number of warmup steps).
     """
 
-    start: int | float
-    end: int | float
-    quantization_factor: int | float
-    name: str = "quantized_space"
-
-    def __post_init__(self):
-        self.n_points = jnp.int32(
-            (self.end - self.start) / self.quantization_factor + 1
-        )
-
-    @property
-    def array(self) -> jax.Array:
-        return jnp.linspace(self.start, self.end, self.n_points)
-
-
-# class QuantizedLogSpace(QuantizedLinearSpace):
-#     base: float | int = 10
-#     name: str = "quantized_log_space"
-
-#     @property
-#     def array(self) -> jax.Array:
-#         arr = jnp.log(super().array) / jnp.log(self.base)
-#         return self.base**arr
-
-
-# TODO: add distribution versions
-# TODO: add support for nested spaces with pytrees
+    pass

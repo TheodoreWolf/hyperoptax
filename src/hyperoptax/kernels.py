@@ -18,14 +18,17 @@ def cdist(x: jax.Array, y: jax.Array) -> jax.Array:
         A distance matrix of shape ``(N, M)``.
     """
     # jax compatible cdist https://github.com/jax-ml/jax/discussions/15862
-    return jnp.sqrt(jnp.sum((x[:, None] - y[None, :]) ** 2, -1))
+    # Use double-where trick to avoid inf gradients at zero distance (sqrt'(0) = inf).
+    d2 = jnp.sum((x[:, None] - y[None, :]) ** 2, -1)
+    safe_d2 = jnp.where(d2 == 0, jnp.ones_like(d2), d2)
+    return jnp.where(d2 == 0, jnp.zeros_like(d2), jnp.sqrt(safe_d2))
 
 
 class BaseKernel(ABC):
     """Abstract base class for positive-definite kernels."""
 
     @abstractmethod
-    def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
+    def __call__(self, x: jax.Array, y: jax.Array, length_scale=None) -> jax.Array:
         raise NotImplementedError
 
 
@@ -36,14 +39,12 @@ class RBF(BaseKernel):
     def __init__(self, length_scale: float = 1.0):
         self.length_scale = length_scale
 
-    def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
-        return jnp.exp(-(cdist(x, y) ** 2) / (2 * self.length_scale**2))
-
-    def diag(self, x: jax.Array) -> jax.Array:
-        return jnp.ones(x.shape[0])
+    def __call__(self, x: jax.Array, y: jax.Array, length_scale=None) -> jax.Array:
+        ls = self.length_scale if length_scale is None else length_scale
+        return jnp.exp(-(cdist(x, y) ** 2) / (2 * ls**2))
 
 
-class Matern(RBF):
+class Matern(BaseKernel):
     """Matern kernel family.
 
     Parameters
@@ -54,12 +55,21 @@ class Matern(RBF):
         Controls smoothness (``nu`` ∈ {0.5, 1.5, 2.5, ∞}).
     """
 
+    _VALID_NU = {0.5, 1.5, 2.5, float("inf")}
+
     def __init__(self, length_scale: float = 1.0, nu: float = 2.5):
+        if nu not in self._VALID_NU:
+            valid = sorted(v for v in self._VALID_NU if v != float("inf"))
+            raise ValueError(
+                f"Matern kernel with nu={nu} is not supported. "
+                f"Choose from {valid} or inf."
+            )
         self.length_scale = length_scale
         self.nu = nu  # controls smoothness of the kernel, lower is less smooth
 
-    def __call__(self, x: jax.Array, y: jax.Array) -> jax.Array:
-        dists = cdist(x / self.length_scale, y / self.length_scale)
+    def __call__(self, x: jax.Array, y: jax.Array, length_scale=None) -> jax.Array:
+        ls = self.length_scale if length_scale is None else length_scale
+        dists = cdist(x / ls, y / ls)
         if self.nu == 0.5:
             return jnp.exp(-dists)
         elif self.nu == 1.5:
@@ -68,7 +78,5 @@ class Matern(RBF):
         elif self.nu == 2.5:
             K = jnp.sqrt(5) * dists
             return (1 + K + K**2 / 3) * jnp.exp(-K)
-        elif self.nu == jnp.inf:  # RBF kernel
+        else:  # nu == inf: RBF kernel
             return jnp.exp(-(dists**2) / 2)
-        else:
-            raise ValueError(f"Matern kernel with nu={self.nu} is not supported.")

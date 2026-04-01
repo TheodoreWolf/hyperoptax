@@ -1,147 +1,162 @@
 import inspect
-import logging
-from functools import partial
+import warnings
 from typing import Callable
 
 import jax
 import jax.numpy as jnp
-import numpy as np
-
-logger = logging.getLogger(__name__)
+from flax import struct
 
 
-# TODO: use existing results if they exist
-# TODO: add support for keys
-# TODO: implement callback/wandb logging
-class BaseOptimizer:
-    """
-    Base class for optimizers/grid search.
-
-    Args:
-        domain (dict[str, jax.Array]): The domain of the optimizer.
-        f (Callable): The function to optimize.
-        callback (Callable): A callback function to call after each iteration.
-    """
-
-    def __init__(
-        self,
-        domain: dict[str, jax.Array],
-        f: Callable,
-        callback: Callable = lambda x: None,
-    ):
-        self.f = f
-        self.callback = callback
-        self.results = None
-
-        n_args = len(inspect.signature(f).parameters)
-        n_points = np.prod([len(domain[k]) for k in domain])
-        if n_points > 1e6:
-            # TODO: what do if the matrix is too large?
-            logger.warning(
-                f"Creating a {n_points}x{n_args} grid, this may be too large!"
+def _validate_func(func):
+    try:
+        sig = inspect.signature(func)
+        positional = [
+            p
+            for p in sig.parameters.values()
+            if p.kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
             )
-
-        assert n_args == len(domain), (
-            f"Function must have the same number of arguments as the domain, "
-            f"got {n_args} arguments and {len(domain)} domains."
+        ]
+        if len(positional) < 2:
+            raise TypeError(
+                f"func must have signature fn(key, config) — "
+                f"received a function with {len(positional)} positional parameter(s). "
+                "Did you forget the key argument?"
+            )
+    except (ValueError, TypeError) as e:
+        if "func must have" in str(e):
+            raise
+        warnings.warn(
+            "Can't introspect function signature - ensure that the "
+            "function has a signature fn(key, config)."
         )
-        # we make a grid of all the points in the domain
-        # in future versions we want to sample points from the domain
-        grid = jnp.array(jnp.meshgrid(*[space.array for space in domain.values()]))
-        self.domain = grid.reshape(n_args, n_points).T
+        return
+
+
+@struct.dataclass
+class OptimizerState:
+    """Base optimizer state — a Flax PyTree holding the search space definition."""
+
+    space: struct.PyTreeNode
+
+
+class Optimizer:
+    n_parallel: int = 1
+
+    @classmethod
+    def init(cls, space, **kwargs) -> OptimizerState:
+        return OptimizerState(space=space), cls()
 
     def optimize(
         self,
-        n_iterations: int = -1,
-        n_vmap: int = 1,
-        n_pmap: int = 1,
-        maximize: bool = True,
-        jit: bool = False,
-        key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-    ):
+        state: OptimizerState,
+        key: jax.Array,  # ()  PRNG key
+        func: Callable,  # (key, config) -> ()  scalar result
+        n_iterations: int,
+    ) -> tuple[OptimizerState, tuple[struct.PyTreeNode, jax.Array]]:
         """
-        Optimize the function.
-        Note: pmap doesn't work as expected for the Bayesian optimizer... yet.
+        High Level API for optimizing a function over a space.
+        Not recommended if you want to do fancy things
+        with parallel computation.
 
-        Args:
-            n_iterations (int): The number of iterations to run.
-            n_vmap (int): The number of points to evaluate in parallel on the
-                same device.
-            n_pmap (int): The number of points to evaluate in parallel on different
-                devices.
-            maximize (bool): Whether to maximize or minimize the function.
-            jit (bool): Whether to jit the function.
-            key (jax.random.PRNGKey): The random key to use for sampling.
-
+        ``func`` must return a scalar (``()`` shape). If your function returns
+        shape ``(1,)``, call ``.squeeze()`` inside ``func`` before returning.
         """
-        if n_iterations == -1:
-            n_iterations = self.domain.shape[0]
+        _validate_func(func)
+        params_hist, results_hist = [], []
+        params, results = None, None
+        for _ in range(n_iterations):
+            key, key_get, key_funcs, key_update = jax.random.split(key, 4)
+            params = self.get_next_params(state, key_get, params, results)
+            # params:        pytree, each leaf shape (n_parallel, ...)
+            # func_keys:     (n_parallel, 2)
+            # batch_results: (n_parallel,)
+            func_keys = jax.random.split(key_funcs, self.n_parallel)
+            batch_results = jax.vmap(func)(func_keys, params)  # (n_parallel,)
+            state = self.update_state(state, key_update, batch_results, params)
+            params_hist.append(params)
+            results_hist.append(batch_results)
+        return state, (params_hist, results_hist)
 
-        if maximize:
-            self.map_f = jax.vmap(self.f, in_axes=(0,) * self.domain.shape[1])
-        else:
-            self.map_f = jax.vmap(
-                lambda *args: -self.f(*args), in_axes=(0,) * self.domain.shape[1]
-            )
+    def optimize_scan(
+        self,
+        state: OptimizerState,
+        key: jax.Array,  # ()  PRNG key
+        func: Callable,  # (key, config) -> ()  scalar result
+        n_iterations: int,
+    ) -> tuple[OptimizerState, tuple[struct.PyTreeNode, jax.Array]]:
+        """
+        Like optimize, but uses jax.lax.scan for the inner loop.
 
-        if n_pmap > 1:
-            assert n_iterations % n_pmap == 0, (
-                "n_iterations must be divisible by n_pmap"
-            )
-            assert n_pmap == jax.local_device_count(), (
-                "n_pmap must be equal to the number of devices"
-            )
-            # TODO: fix this for the bayesian optimizer
-            domains = jnp.array(jnp.array_split(self.domain[:n_iterations], n_pmap))
-            n_iterations = n_iterations // n_pmap
-            X_seen, y_seen = jax.pmap(
-                partial(self.search, n_iterations=n_iterations, n_vmap=n_vmap, key=key),
-            )(domain=domains)
+        Requires func to be JAX-traceable (jit-compilable). Returns stacked
+        arrays instead of lists: params_hist is a pytree where each leaf has
+        shape (n_iterations, n_parallel, ...), and results_hist has shape
+        (n_iterations, n_parallel).
 
-        # mostly for debugging purposes
-        elif jit:
-            X_seen, y_seen = jax.jit(self.search, static_argnums=(0, 1))(
-                n_iterations, n_vmap, key
-            )
-        else:
-            X_seen, y_seen = self.search(n_iterations, n_vmap, key)
+        ``func`` must return a scalar (``()`` shape). If your function returns
+        shape ``(1,)``, call ``.squeeze()`` inside ``func`` before returning.
+        """
+        _validate_func(func)
+        # Run one step outside scan to determine pytree structure and result shape.
+        key, key_get, key_funcs, key_update = jax.random.split(key, 4)
+        params0 = self.get_next_params(state, key_get, None, None)
+        # params0:  pytree, each leaf shape (n_parallel, ...)
+        # results0: (n_parallel,)
+        func_keys0 = jax.random.split(key_funcs, self.n_parallel)
+        results0 = jax.vmap(func)(func_keys0, params0)  # (n_parallel,)
+        state = self.update_state(state, key_update, results0, params0)
+        # Save step-0 outputs before scan overwrites these names via carry.
+        first_params, first_results = params0, results0
 
-        max_idxs = jnp.where(y_seen == y_seen.max())
+        def step(carry, _):
+            state, key, params, results = carry
+            key, key_get, key_funcs, key_update = jax.random.split(key, 4)
+            params = self.get_next_params(state, key_get, params, results)
+            func_keys = jax.random.split(key_funcs, self.n_parallel)
+            batch_results = jax.vmap(func)(func_keys, params)  # (n_parallel,)
+            state = self.update_state(state, key_update, batch_results, params)
+            return (state, key, params, batch_results), (params, batch_results)
 
-        if not maximize:
-            y_seen = -y_seen
+        (final_state, _, _, _), (params_hist, results_hist) = jax.lax.scan(
+            step,
+            (state, key, params0, results0),
+            None,
+            length=n_iterations - 1,
+        )
 
-        self.results = (X_seen, y_seen)
+        # Prepend step 0 so the output has n_iterations total entries.
+        params_hist = jax.tree.map(
+            lambda first, rest: jnp.concatenate([first[None], rest]),
+            first_params,
+            params_hist,
+        )
+        results_hist = jnp.concatenate([first_results[None], results_hist])
+        return final_state, (params_hist, results_hist)
 
-        return X_seen[max_idxs].squeeze()
-
-    def search(self, n_iterations: int, n_parallel: int, key: jax.random.PRNGKey):
+    def update_state(
+        self,
+        state: OptimizerState,
+        key: jax.random.PRNGKey,
+        results: jax.Array,
+        params: struct.PyTreeNode = None,
+    ) -> OptimizerState:
+        """
+        Updates the optimizer state based on the results of the function.
+        """
         raise NotImplementedError
 
-    @property
-    def max(self) -> dict[str, jax.Array]:
+    def get_next_params(
+        self,
+        state: OptimizerState,
+        key: jax.random.PRNGKey,
+        params: struct.PyTreeNode = None,
+        results: jax.Array = None,
+    ) -> struct.PyTreeNode:
         """
-        Get the maximum value and parameters of the function.
-
-        Returns:
-            dict[str, jax.Array]: A dictionary with the maximum value and parameters.
+        Gets the next parameters to sample from the space.
+        Returns a batched pytree where every leaf has shape (n_parallel, ...).
+        params and results are the previous iteration's values (None on first call).
         """
-        assert self.results is not None, "No results found, run optimize first."
-        return {
-            "target": self.results[1].max(),
-            "params": self.results[0][self.results[1].argmax()].flatten(),
-        }
-
-    @property
-    def min(self) -> dict[str, jax.Array]:
-        """
-        Get the minimum value and parameters of the function.
-
-        Returns:
-            dict[str, jax.Array]: A dictionary with the minimum value and parameters.
-        """
-        assert self.results is not None, "No results found, run optimize first."
-        return {
-            "target": self.results[1].min(),
-            "params": self.results[0][self.results[1].argmin()].flatten(),
-        }
+        raise NotImplementedError

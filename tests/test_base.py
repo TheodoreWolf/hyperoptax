@@ -1,52 +1,58 @@
+import warnings
+from unittest.mock import patch
+
+import jax
 import jax.numpy as jnp
 import pytest
 
-from hyperoptax.base import BaseOptimizer
-from hyperoptax.spaces import LinearSpace
+from hyperoptax import base
 
 
-class TestBaseOptimizer:
-    def setup_method(self):
-        self.optimizer = BaseOptimizer(
-            domain={"x": LinearSpace(0, 1, 10)}, f=lambda x: x
-        )
+class TestValidateFunc:
+    def test_valid_two_arg_function_passes(self):
+        base._validate_func(lambda key, config: config)
 
-    def test_when_no_results_are_found(self):
-        with pytest.raises(AssertionError):
-            self.optimizer.max
-        with pytest.raises(AssertionError):
-            self.optimizer.min
+    def test_one_arg_raises(self):
+        with pytest.raises(TypeError, match="fn\\(key, config\\)"):
+            base._validate_func(lambda x: x)
 
-    def test_max(self):
-        # manually set the results
-        self.optimizer.results = (
-            self.optimizer.domain,
-            jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-        )
-        assert self.optimizer.max["target"] == 10
+    def test_zero_arg_raises(self):
+        with pytest.raises(TypeError):
+            base._validate_func(lambda: 1)
 
-    def test_min(self):
-        # manually set the results
-        self.optimizer.results = (
-            self.optimizer.domain,
-            jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
-        )
-        assert self.optimizer.min["target"] == 1
+    def test_uninspectable_function_warns(self):
+        # Simulate inspect.signature raising a non-TypeError ValueError
+        with patch("inspect.signature", side_effect=ValueError("no signature")):
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                base._validate_func(lambda key, config: config)
+            assert len(w) == 1
+            assert "introspect" in str(w[0].message).lower()
+
+    def test_uninspectable_function_returns_none(self):
+        with patch("inspect.signature", side_effect=ValueError("no signature")):
+            result = base._validate_func(lambda key, config: config)
+        assert result is None
 
 
-# class TestDomain:
-#     def test_domain(self):
-#         domain = {
-#             "x": LinearSpace(0, 1, 10),
-#             "y": LinearSpace(0, 1, 10),
-#             "z": LinearSpace(0, 1, 10),
-#             "agent_kwargs": {
-#                 "lr": LinearSpace(0, 1, 10),
-#                 "batch_size": LinearSpace(0, 1, 10),
-#             },
-#         }
+class TestOptimizerBase:
+    def test_init_returns_state_and_optimizer(self):
+        space = {"x": jnp.array(0.0)}
+        state, optimizer = base.Optimizer.init(space)
+        assert isinstance(state, base.OptimizerState)
+        assert isinstance(optimizer, base.Optimizer)
 
-#         def f(x, y, z, agent_kwargs):
-#             return x + y + z + agent_kwargs["lr"] + agent_kwargs["batch_size"]
+    def test_init_state_stores_space(self):
+        space = {"x": jnp.array(1.0), "y": jnp.array(2.0)}
+        state, _ = base.Optimizer.init(space)
+        assert state.space == space
 
-#         f(**domain)
+    def test_update_state_raises_not_implemented(self):
+        state, optimizer = base.Optimizer.init({})
+        with pytest.raises(NotImplementedError):
+            optimizer.update_state(state, jax.random.PRNGKey(0), jnp.array(1.0))
+
+    def test_get_next_params_raises_not_implemented(self):
+        state, optimizer = base.Optimizer.init({})
+        with pytest.raises(NotImplementedError):
+            optimizer.get_next_params(state, jax.random.PRNGKey(0))
