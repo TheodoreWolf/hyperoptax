@@ -33,7 +33,7 @@ pip install --upgrade "jax[cpu]"
 ```
 ## 🥜 In a nutshell
 
-All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`.
+All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`. `params` can be any PyTree.
 
 ```python
 import jax
