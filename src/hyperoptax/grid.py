@@ -1,14 +1,15 @@
 import dataclasses
+from typing import Any
 
 import jax
 import jax.numpy as jnp
-from flax import struct
 
 from hyperoptax import base
 from hyperoptax import spaces as sp
 
 
-@struct.dataclass
+@jax.tree_util.register_dataclass
+@dataclasses.dataclass(frozen=True)
 class GridSearchState(base.OptimizerState):
     """State for :class:`GridSearch`.
 
@@ -86,7 +87,7 @@ class GridSearch(base.Optimizer):
 
     def get_next_params(
         self, state: GridSearchState, key, params=None, results=None
-    ) -> struct.PyTreeNode:
+    ) -> Any:
         """Return the next ``n_parallel`` parameter combinations from the grid."""
         # Only check eagerly; inside lax.scan grid_idx is an abstract tracer.
         if not isinstance(state.grid_idx, jax.core.Tracer):
@@ -110,4 +111,4 @@ class GridSearch(base.Optimizer):
         self, state: GridSearchState, key, results, params=None
     ) -> GridSearchState:
         """Advance the grid index by ``n_parallel``."""
-        return state.replace(grid_idx=state.grid_idx + self.n_parallel)
+        return dataclasses.replace(state, grid_idx=state.grid_idx + self.n_parallel)

@@ -1,3 +1,5 @@
+import dataclasses
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -157,7 +159,7 @@ class TestGridSearchGetNextParams:
         space = {"x": sp.DiscreteSpace([0.0, 0.5, 1.0])}
         state, optimizer = grid.GridSearch.init(space, n_parallel=2)
         # Move to last valid position
-        state = state.replace(grid_idx=2)
+        state = dataclasses.replace(state, grid_idx=2)
         with pytest.raises(ValueError, match="Not enough grid points"):
             optimizer.get_next_params(state, _KEY)
 

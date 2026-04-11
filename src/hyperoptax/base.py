@@ -1,10 +1,10 @@
 import inspect
 import warnings
-from typing import Callable
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
-from flax import struct
 
 
 def _validate_func(func):
@@ -35,11 +35,12 @@ def _validate_func(func):
         return
 
 
-@struct.dataclass
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
 class OptimizerState:
-    """Base optimizer state — a Flax PyTree holding the search space definition."""
+    """Base optimizer state — a JAX pytree holding the search space definition."""
 
-    space: struct.PyTreeNode
+    space: Any
 
 
 class Optimizer:
@@ -55,7 +56,7 @@ class Optimizer:
         key: jax.Array,  # ()  PRNG key
         func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
-    ) -> tuple[OptimizerState, tuple[struct.PyTreeNode, jax.Array]]:
+    ) -> tuple[OptimizerState, tuple[Any, jax.Array]]:
         """
         High Level API for optimizing a function over a space.
         Not recommended if you want to do fancy things
@@ -86,7 +87,7 @@ class Optimizer:
         key: jax.Array,  # ()  PRNG key
         func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
-    ) -> tuple[OptimizerState, tuple[struct.PyTreeNode, jax.Array]]:
+    ) -> tuple[OptimizerState, tuple[Any, jax.Array]]:
         """
         Like optimize, but uses jax.lax.scan for the inner loop.
 
@@ -140,7 +141,7 @@ class Optimizer:
         state: OptimizerState,
         key: jax.random.PRNGKey,
         results: jax.Array,
-        params: struct.PyTreeNode = None,
+        params: Any = None,
     ) -> OptimizerState:
         """
         Updates the optimizer state based on the results of the function.
@@ -151,9 +152,9 @@ class Optimizer:
         self,
         state: OptimizerState,
         key: jax.random.PRNGKey,
-        params: struct.PyTreeNode = None,
+        params: Any = None,
         results: jax.Array = None,
-    ) -> struct.PyTreeNode:
+    ) -> Any:
         """
         Gets the next parameters to sample from the space.
         Returns a batched pytree where every leaf has shape (n_parallel, ...).
