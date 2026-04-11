@@ -315,8 +315,8 @@ class TestBayesianSearchGetNextParams:
         params = optimizer.get_next_params(state, self.key)
         assert "x" in params
         assert "y" in params
-        assert params["x"].shape == (4,)
-        assert params["y"].shape == (4,)
+        assert params["x"].shape == (1,)
+        assert params["y"].shape == (1,)
 
     def test_n_parallel_discrete(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
@@ -328,7 +328,7 @@ class TestBayesianSearchGetNextParams:
 class TestBayesianSearchOptimize:
     def test_optimize_returns_correct_shapes(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5)
         func = lambda key, config: -(config["x"] ** 2)
         state, (params_hist, results_hist) = optimizer.optimize(
             state, jax.random.PRNGKey(0), func
@@ -338,14 +338,14 @@ class TestBayesianSearchOptimize:
 
     def test_optimize_fills_state(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5)
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
         assert int(state.mask.sum()) == 5
 
     def test_optimize_finds_optimum(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=20, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=20)
         func = lambda key, config: -(config["x"] ** 2)
         state, (params_hist, results_hist) = optimizer.optimize(
             state, jax.random.PRNGKey(0), func
@@ -355,7 +355,7 @@ class TestBayesianSearchOptimize:
 
     def test_optimize_with_array_result(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=3, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=3)
         func = lambda key, config: jnp.array([-(config["x"] ** 2)])
         state, (_, results_hist) = optimizer.optimize(
             state, jax.random.PRNGKey(0), func
@@ -365,7 +365,7 @@ class TestBayesianSearchOptimize:
     def test_optimize_converges_toward_optimum(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
         state, optimizer = bayesian.BayesianSearch.init(
-            space, n_max=20, n_parallel=1, acquisition=acq.UCB()
+            space, n_max=20, acquisition=acq.UCB()
         )
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
@@ -373,7 +373,7 @@ class TestBayesianSearchOptimize:
 
     def test_optimize_continuous_space(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5)
         func = lambda key, config: -(config["x"] ** 2)
         state, (params_hist, results_hist) = optimizer.optimize(
             state, jax.random.PRNGKey(0), func
@@ -384,7 +384,7 @@ class TestBayesianSearchOptimize:
     def test_optimize_continuous_with_ei_uses_observed_y_max(self):
         space = {"x": sp.LinearSpace(0.0, 1.0), "y": sp.LinearSpace(0.0, 1.0)}
         state, optimizer = bayesian.BayesianSearch.init(
-            space, n_max=20, n_parallel=1, acquisition=acq.EI()
+            space, n_max=20, acquisition=acq.EI()
         )
         state = optimizer.update_state(
             state, jax.random.PRNGKey(0), jnp.array([100.0]), jnp.array([[0.5, 0.5]])
@@ -394,10 +394,10 @@ class TestBayesianSearchOptimize:
 
     def test_optimize_minimize(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=20, n_parallel=1, maximize=False)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=10, maximize=False)
         func = lambda key, config: config["x"] ** 2
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
-        assert int(state.mask.sum()) == 20
+        assert int(state.mask.sum()) == 10
         assert float(optimizer.best_result(state)) == pytest.approx(0.0)
 
     def test_optimize_n_parallel_fills_buffer(self):
@@ -458,7 +458,7 @@ class TestBestParamsResult:
         assert float(params["x"]) == pytest.approx(0.5)
 
     def test_best_result_after_full_optimize(self):
-        state, optimizer = bayesian.BayesianSearch.init(self.space, n_max=10, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(self.space, n_max=10)
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
         assert float(optimizer.best_result(state)) == pytest.approx(
@@ -509,7 +509,7 @@ class TestHparamTuning:
 
     def test_tuned_length_scale_used_in_gp(self):
         state, optimizer = bayesian.BayesianSearch.init(
-            self.space, n_max=10, n_parallel=1, n_hparam_steps=20
+            self.space, n_max=10, n_hparam_steps=20
         )
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
@@ -551,7 +551,7 @@ class TestMixedSpace:
             "lr": sp.LogSpace(1e-4, 1e-1),
             "layers": sp.DiscreteSpace([1, 2, 3, 4]),
         }
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=20, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=20)
         params = optimizer.get_next_params(state, jax.random.PRNGKey(0))
         assert "lr" in params and "layers" in params
         assert params["lr"].shape == (1,)
@@ -593,7 +593,7 @@ class TestValidateFunc:
 class TestBayesianSearchOptimizeScan:
     def test_optimize_scan_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(space, n_max=5)
         func = lambda key, config: -(config["x"] ** 2)
         state, (params_hist, results_hist) = optimizer.optimize_scan(
             state, jax.random.PRNGKey(0), func
@@ -719,9 +719,9 @@ class TestLBFGSImprovement:
                 state, key, jnp.array([r]), jnp.array([[x, y_]])
             )
         params = optimizer.get_next_params(state, key)
-        assert params["x"].shape == (optimizer.n_parallel,)
-        assert all(0.0 <= float(v) <= 1.0 for v in params["x"])
-        assert all(0.0 <= float(v) <= 1.0 for v in params["y"])
+        assert params["x"].shape == (1,)
+        assert 0.0 <= float(params["x"][0]) <= 1.0
+        assert 0.0 <= float(params["y"][0]) <= 1.0
 
 
 class TestKrigingBelieverHallucination:
@@ -749,10 +749,10 @@ class TestKrigingBelieverHallucination:
             state = optimizer.update_state(state, key, jnp.array([float(i)]), x)
         return state, optimizer
 
-    def test_default_hallucination_is_sample(self):
+    def test_default_hallucination_is_mean(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         _, optimizer = bayesian.BayesianSearch.init(space)
-        assert isinstance(optimizer.hallucination, acq.SampleHallucination)
+        assert isinstance(optimizer.hallucination, acq.MeanHallucination)
 
     def test_mean_hallucination_optimize_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
