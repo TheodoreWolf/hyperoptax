@@ -1,6 +1,8 @@
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+
 import jax
 import jax.numpy as jnp
-from flax import struct
 
 
 # transformation between logs
@@ -8,9 +10,11 @@ def log_transform(x: float, base: float) -> float:
     return jnp.log(x) / jnp.log(base)
 
 
-class Space(struct.PyTreeNode):
+@dataclass(frozen=True)
+class Space(ABC):
     """Abstract base class for hyperparameter search spaces."""
 
+    @abstractmethod
     def sample(self, key: jax.random.PRNGKey) -> jax.Array:
         raise NotImplementedError
 
@@ -18,6 +22,8 @@ class Space(struct.PyTreeNode):
         return value
 
 
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
 class LinearSpace(Space):
     """Uniform continuous space over ``[lower_bound, upper_bound]``.
 
@@ -26,8 +32,8 @@ class LinearSpace(Space):
         upper_bound: Exclusive upper bound of the interval.
     """
 
-    lower_bound: float = struct.field(pytree_node=False)
-    upper_bound: float = struct.field(pytree_node=False)
+    lower_bound: float = field(metadata=dict(static=True))
+    upper_bound: float = field(metadata=dict(static=True))
 
     def __post_init__(self):
         assert self.lower_bound < self.upper_bound, (
@@ -42,6 +48,8 @@ class LinearSpace(Space):
         )
 
 
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
 class DiscreteSpace(Space):
     """Discrete space over a fixed set of values.
 
@@ -53,7 +61,7 @@ class DiscreteSpace(Space):
         values: Tuple of candidate values to sample from.
     """
 
-    values: tuple = struct.field(pytree_node=False)
+    values: tuple = field(metadata=dict(static=True))
 
     @property
     def lower_bound(self) -> float:
@@ -76,6 +84,8 @@ class DiscreteSpace(Space):
         return snapped.reshape(value.shape)
 
 
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
 class LogSpace(LinearSpace):
     """Log-uniform continuous space over ``[lower_bound, upper_bound]``.
 
@@ -89,15 +99,13 @@ class LogSpace(LinearSpace):
         base: Logarithm base (default ``10``). Must be greater than 1.
     """
 
-    base: float = struct.field(pytree_node=False, default=10)
+    base: float = field(default=10, metadata=dict(static=True))
 
-    def __post_init__(
-        self,
-    ):
+    def __post_init__(self):
         super().__post_init__()
         assert self.base > 1, "Log base must be greater than 1"
 
-    def sample(self, key: jax.random.PRNGKey) -> float:
+    def sample(self, key: jax.random.PRNGKey) -> jax.Array:
         return self.transform(
             self.base
             ** jax.random.uniform(
@@ -111,6 +119,8 @@ class LogSpace(LinearSpace):
 
 # TODO: maybe use something more robust than astype?
 # TODO: can we do something with mixins? Currently hitting some ordering problems
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
 class QLinearSpace(LinearSpace):
     """Quantized (integer) variant of :class:`LinearSpace`.
 
@@ -124,13 +134,15 @@ class QLinearSpace(LinearSpace):
         datatype: Integer dtype used after rounding (default ``jnp.int32``).
     """
 
-    datatype: type = struct.field(pytree_node=False, default=jnp.int32)
+    datatype: type = field(default=jnp.int32, metadata=dict(static=True))
 
     def transform(self, value) -> jax.Array:
         return jnp.round(value).astype(self.datatype)
 
 
-class QLogSpace(LogSpace, QLinearSpace):
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class QLogSpace(LogSpace):
     """Quantized (integer) variant of :class:`LogSpace`.
 
     Samples in log space and rounds to the nearest integer. Use this for
@@ -138,4 +150,7 @@ class QLogSpace(LogSpace, QLinearSpace):
     (e.g. number of hidden units, number of warmup steps).
     """
 
-    pass
+    datatype: type = field(default=jnp.int32, metadata=dict(static=True))
+
+    def transform(self, value) -> jax.Array:
+        return jnp.round(value).astype(self.datatype)

@@ -4,7 +4,6 @@ import functools
 import jax
 import jax.numpy as jnp
 import optax
-from flax import struct
 
 from hyperoptax import acquisition as acq
 from hyperoptax import base, kernels
@@ -13,7 +12,8 @@ from hyperoptax import spaces as sp
 MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from GP fit
 
 
-@struct.dataclass
+@jax.tree_util.register_dataclass
+@dataclasses.dataclass(frozen=True)
 class BayesianSearchState(base.OptimizerState):
     """State for :class:`BayesianSearch`.
 
@@ -41,9 +41,9 @@ class BayesianSearchState(base.OptimizerState):
 class BayesianSearch(base.Optimizer):
     """Bayesian optimisation with a Gaussian Process surrogate.
 
-    Uses a GP (Matérn 2.5 kernel by default) to model the objective and
+    Uses a GP (Matérn 0.5 kernel by default) to model the objective and
     selects the next batch of candidates by maximising an acquisition function
-    (EI by default). ARD length scales are tuned with Adam each iteration.
+    (PI by default). ARD length scales are tuned with Adam each iteration.
     Parallel batches are generated via the Kriging Believer hallucination
     strategy.
 
@@ -51,9 +51,9 @@ class BayesianSearch(base.Optimizer):
         jitter: Small diagonal added to the kernel matrix for numerical
             stability (default ``1e-6``).
         kernel: Kernel function (default :class:`~hyperoptax.kernels.Matern`
-            with ``nu=2.5``).
+            with ``nu=0.5``).
         acquisition: Acquisition function (default
-            :class:`~hyperoptax.acquisition.EI` with ``xi=0.01``).
+            :class:`~hyperoptax.acquisition.PI` with ``xi=0.01``).
         n_candidates: Number of random candidates sampled per iteration for
             the discrete pre-selection step (default ``1000``).
         n_restarts: Number of L-BFGS restarts seeded from the top candidates
@@ -64,17 +64,17 @@ class BayesianSearch(base.Optimizer):
         n_warmup: Number of pure-random iterations before the GP is used
             (default ``1``).
         maximize: Set ``False`` to minimise the objective (default ``True``).
-        n_parallel: Number of parallel candidates per iteration (default ``1``).
+        n_parallel: Number of parallel candidates per iteration (default ``4``).
         hallucination: Hallucination strategy for Kriging Believer parallel
-            selection (default :class:`~hyperoptax.acquisition.MeanHallucination`).
+            selection (default :class:`~hyperoptax.acquisition.SampleHallucination`).
     """
 
     jitter: float = 1e-6
     kernel: kernels.BaseKernel = dataclasses.field(
-        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=2.5)
+        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=0.5)
     )
     acquisition: acq.BaseAcquisition = dataclasses.field(
-        default_factory=lambda: acq.EI(xi=0.01)
+        default_factory=lambda: acq.PI(xi=0.01)
     )
     n_candidates: int = 1000  # random candidates sampled for continuous spaces
     n_restarts: int = 2  # number of L-BFGS restarts (seeded from top candidates)
@@ -82,9 +82,9 @@ class BayesianSearch(base.Optimizer):
     n_hparam_steps: int = 20  # Adam steps to tune log_length_scale each iteration
     n_warmup: int = 1  # pure-random evaluations before GP kicks in
     maximize: bool = True  # set False to minimize the objective
-    n_parallel: int = 1
+    n_parallel: int = 4
     hallucination: acq.BaseHallucination = dataclasses.field(
-        default_factory=acq.MeanHallucination
+        default_factory=acq.SampleHallucination
     )
 
     @classmethod
@@ -382,7 +382,8 @@ class BayesianSearch(base.Optimizer):
             y_scalar = jax.lax.dynamic_slice(results, (i,), (1,))
             return jax.lax.cond(
                 slot < n_max,
-                lambda s: s.replace(
+                lambda s: dataclasses.replace(
+                    s,
                     X=jax.lax.dynamic_update_slice(s.X, x_row, (slot, 0)),
                     y=jax.lax.dynamic_update_slice(s.y, y_scalar, (slot,)),
                     mask=jax.lax.dynamic_update_slice(
@@ -428,7 +429,7 @@ class BayesianSearch(base.Optimizer):
                 lambda s: s.log_length_scale,
                 state,
             )
-            state = state.replace(log_length_scale=log_ls)
+            state = dataclasses.replace(state, log_length_scale=log_ls)
         return state
 
     def _n_iterations(self, state):

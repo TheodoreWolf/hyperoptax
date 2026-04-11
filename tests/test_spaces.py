@@ -95,11 +95,10 @@ def test_space_post_init():
         sp.LogSpace(0, 10, base=1)
 
 
-def test_space_base_sample_raises():
+def test_space_base_cannot_instantiate():
     # Space.sample is abstract — subclasses must override it
-    space = sp.Space()
-    with pytest.raises(NotImplementedError):
-        space.sample(jax.random.PRNGKey(0))
+    with pytest.raises(TypeError):
+        sp.Space()
 
 
 def test_discrete_space_lower_upper_bound():

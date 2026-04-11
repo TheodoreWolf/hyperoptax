@@ -1,8 +1,8 @@
 import dataclasses
+from typing import Any
 
 import jax
 import jax.numpy as jnp
-from flax import struct
 
 from hyperoptax import base, utils
 from hyperoptax import spaces as sp
@@ -31,7 +31,7 @@ class RandomSearch(base.Optimizer):
         key: jax.random.PRNGKey,
         params=None,
         results=None,
-    ) -> struct.PyTreeNode:
+    ) -> Any:
         """Sample ``n_parallel`` independent configurations from the search space."""
         def sample_once(k):
             subkeys = utils.make_key_tree(state.space, k)
