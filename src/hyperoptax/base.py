@@ -1,10 +1,12 @@
+import dataclasses
 import inspect
 import warnings
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
+from jaxtyping import PyTree
 
 
 def _validate_func(func):
@@ -40,7 +42,10 @@ def _validate_func(func):
 class OptimizerState:
     """Base optimizer state — a JAX pytree holding the search space definition."""
 
-    space: Any
+    space: PyTree
+
+    def replace(self, **kwargs) -> "OptimizerState":
+        return dataclasses.replace(self, **kwargs)
 
 
 class Optimizer:
@@ -56,7 +61,7 @@ class Optimizer:
         key: jax.Array,  # ()  PRNG key
         func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
-    ) -> tuple[OptimizerState, tuple[Any, jax.Array]]:
+    ) -> tuple[OptimizerState, tuple[PyTree, jax.Array]]:
         """
         High Level API for optimizing a function over a space.
         Not recommended if you want to do fancy things
@@ -87,7 +92,7 @@ class Optimizer:
         key: jax.Array,  # ()  PRNG key
         func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
-    ) -> tuple[OptimizerState, tuple[Any, jax.Array]]:
+    ) -> tuple[OptimizerState, tuple[PyTree, jax.Array]]:
         """
         Like optimize, but uses jax.lax.scan for the inner loop.
 
@@ -141,7 +146,7 @@ class Optimizer:
         state: OptimizerState,
         key: jax.random.PRNGKey,
         results: jax.Array,
-        params: Any = None,
+        params: PyTree | None = None,
     ) -> OptimizerState:
         """
         Updates the optimizer state based on the results of the function.
@@ -152,9 +157,9 @@ class Optimizer:
         self,
         state: OptimizerState,
         key: jax.random.PRNGKey,
-        params: Any = None,
+        params: PyTree | None = None,
         results: jax.Array = None,
-    ) -> Any:
+    ) -> PyTree:
         """
         Gets the next parameters to sample from the space.
         Returns a batched pytree where every leaf has shape (n_parallel, ...).

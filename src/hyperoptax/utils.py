@@ -1,14 +1,13 @@
-from typing import Any
-
 import jax
+from jaxtyping import PyTree
 
 from hyperoptax import spaces as sp
 
 
 def make_key_tree(
-    pytree: Any,
+    pytree: PyTree,
     subkey: jax.random.PRNGKey,
-) -> Any:
+) -> PyTree:
     """Split ``subkey`` into a pytree of PRNGKeys matching the structure of ``pytree``.
 
     :class:`~hyperoptax.spaces.Space` objects are treated as leaves, so the

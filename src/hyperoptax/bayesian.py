@@ -382,8 +382,7 @@ class BayesianSearch(base.Optimizer):
             y_scalar = jax.lax.dynamic_slice(results, (i,), (1,))
             return jax.lax.cond(
                 slot < n_max,
-                lambda s: dataclasses.replace(
-                    s,
+                lambda s: s.replace(
                     X=jax.lax.dynamic_update_slice(s.X, x_row, (slot, 0)),
                     y=jax.lax.dynamic_update_slice(s.y, y_scalar, (slot,)),
                     mask=jax.lax.dynamic_update_slice(
@@ -429,7 +428,7 @@ class BayesianSearch(base.Optimizer):
                 lambda s: s.log_length_scale,
                 state,
             )
-            state = dataclasses.replace(state, log_length_scale=log_ls)
+            state = state.replace(log_length_scale=log_ls)
         return state
 
     def _n_iterations(self, state):
