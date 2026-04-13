@@ -719,9 +719,9 @@ class TestLBFGSImprovement:
                 state, key, jnp.array([r]), jnp.array([[x, y_]])
             )
         params = optimizer.get_next_params(state, key)
-        assert params["x"].shape == (1,)
-        assert 0.0 <= float(params["x"][0]) <= 1.0
-        assert 0.0 <= float(params["y"][0]) <= 1.0
+        assert params["x"].shape == (4,)
+        assert all(0.0 <= float(v) <= 1.0 for v in params["x"])
+        assert all(0.0 <= float(v) <= 1.0 for v in params["y"])
 
 
 class TestKrigingBelieverHallucination:
@@ -749,10 +749,10 @@ class TestKrigingBelieverHallucination:
             state = optimizer.update_state(state, key, jnp.array([float(i)]), x)
         return state, optimizer
 
-    def test_default_hallucination_is_mean(self):
+    def test_default_hallucination_is_sample(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
         _, optimizer = bayesian.BayesianSearch.init(space)
-        assert isinstance(optimizer.hallucination, acq.MeanHallucination)
+        assert isinstance(optimizer.hallucination, acq.SampleHallucination)
 
     def test_mean_hallucination_optimize_runs(self):
         space = {"x": sp.LinearSpace(0.0, 1.0)}
