@@ -2,11 +2,13 @@ import time
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from hyperoptax import bayesian
 from hyperoptax import spaces as sp
 
 
+@pytest.mark.timing
 class TestBayesianTiming:
     SPACE = {"x": sp.LinearSpace(0.0, 1.0), "y": sp.LinearSpace(0.0, 1.0)}
 
