@@ -54,6 +54,11 @@ docs = [
     "sphinx-autobuild"
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "timing: performance/throughput benchmarks (deselect with '-m not timing')",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"

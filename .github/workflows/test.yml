@@ -33,7 +33,7 @@ jobs:
         XLA_FLAGS: "--xla_force_host_platform_device_count=4"
         JAX_PLATFORM_NAME: "cpu"
       run: |
-        pytest --cov --cov-branch --cov-report=xml
+        pytest --cov --cov-branch --cov-report=xml -m "not timing"
     
     - name: Upload results to Codecov
       uses: codecov/codecov-action@v5
