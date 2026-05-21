@@ -34,7 +34,7 @@ dev = [
 
 # Complete development environment
 all = [
-    "hyperoptax[notebooks,testing,dev]"
+    "hyperoptax[notebooks,testing,dev,docs]"
 ]
 
 [tool.setuptools.packages.find]
