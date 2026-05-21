@@ -1,4 +1,4 @@
-<img src="./assets/logo_transparent.png" alt="Hyperoptax Logo" style="width:80%;"/>
+<img src="./assets/logo-transparent.png" alt="Hyperoptax Logo" style="width:100%;"/>
 
 # Hyperoptax: Parallel hyperparameter tuning with JAX
 
@@ -6,8 +6,6 @@
 ![CI status](https://github.com/TheodoreWolf/hyperoptax/actions/workflows/test.yml/badge.svg?branch=main)
 [![codecov](https://codecov.io/gh/TheodoreWolf/hyperoptax/graph/badge.svg?token=Y582MZ25GG)](https://codecov.io/gh/TheodoreWolf/hyperoptax)
 
->[!WARNING]
-> Hyperoptax is still a WIP and the API is subject to change. There are _many_ rough edges to smooth out. It is recommended to download specific versions or to download from source if you want to use it in a large scale project.
 
 ## ⛰️ Introduction
 
@@ -33,7 +31,7 @@ pip install --upgrade "jax[cpu]"
 ```
 ## 🥜 In a nutshell
 
-All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`. `params` can be any PyTree.
+All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`. Importantly, `params` can be _any_ PyTree.
 
 ```python
 import jax
@@ -117,7 +115,7 @@ Since we are working in pure JAX the same [sharp bits](https://docs.jax.dev/en/l
 We welcome pull requests! To get started:
 
 1. Open an issue describing the bug or feature.
-2. Fork the repository and create a feature branch (`git checkout -b my-feature`).
+2. Fork the repository and create a feature branch (`git checkout -b user/my-feature`).
 3. Clone and install dependencies. We recommend [uv](https://docs.astral.sh/uv/) for environment management:
 
 ```bash
@@ -140,6 +138,7 @@ I'm developing this both as a passion project and for my work in my PhD. I have 
 - Callbacks!
 - Reduce redundant kernel recomputation — currently the full K matrix is rebuilt each iteration when only the new row/column is needed.
 - Length scale tuning currently uses a fixed Adam step count; smarter convergence criteria could help.
+- Tree Parzen Estimator (TPE), this is essentially SOTA for hyperparameter search, implementing this would be super cool!
 
 ## 📝 Citation
 
