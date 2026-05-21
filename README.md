@@ -1,4 +1,4 @@
-<img src="./assets/logo-transparent.png" alt="Hyperoptax Logo" style="width:100%;"/>
+<img src="./assets/logo-transparent.png" alt="Hyperoptax Logo" style="width:100%; margin-bottom: 1.5em;"/>
 
 # Hyperoptax: Parallel hyperparameter tuning with JAX
 
@@ -29,9 +29,12 @@ If you do not yet have JAX installed, pick the right wheel for your accelerator:
 pip install --upgrade "jax[cpu]"
 # or GPU/TPU – see the official JAX installation guide
 ```
+
 ## 🥜 In a nutshell
 
+
 All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`. Importantly, `params` can be _any_ PyTree.
+
 
 ```python
 import jax
