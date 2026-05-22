@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import optax
 
 from hyperoptax import acquisition as acq
-from hyperoptax import base, kernels
+from hyperoptax import base, kernels, utils
 from hyperoptax import spaces as sp
 
 MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from GP fit
@@ -71,10 +71,10 @@ class BayesianSearch(base.Optimizer):
 
     jitter: float = 1e-6
     kernel: kernels.BaseKernel = dataclasses.field(
-        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=0.5)
+        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=2.5)
     )
     acquisition: acq.BaseAcquisition = dataclasses.field(
-        default_factory=lambda: acq.PI(xi=0.01)
+        default_factory=lambda: acq.EI(xi=0.01)
     )
     n_candidates: int = 1000  # random candidates sampled for continuous spaces
     n_restarts: int = 2  # number of L-BFGS restarts (seeded from top candidates)
@@ -130,18 +130,6 @@ class BayesianSearch(base.Optimizer):
     # ------------------------------------------------------------------
     # Space helpers
     # ------------------------------------------------------------------
-
-    def _sample_candidates(self, space, key, n):
-        """Sample n random candidates from a continuous space."""
-        leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
-        keys_per_leaf = jax.random.split(key, len(leaves))
-        cols = [
-            jax.vmap(lambda k: leaf.sample(k).squeeze())(
-                jax.random.split(keys_per_leaf[j], n)
-            )
-            for j, leaf in enumerate(leaves)
-        ]
-        return jnp.stack(cols, axis=-1)  # (n, n_params)
 
     def _space_bounds(self, space):
         """Returns (lowers, uppers) arrays of shape (n_params,)."""
@@ -326,7 +314,7 @@ class BayesianSearch(base.Optimizer):
         lowers, uppers = self._space_bounds(state.space)
         length_scale = jnp.exp(state.log_length_scale)
 
-        X_cands = self._sample_candidates(
+        X_cands = utils.sample_space_array(
             state.space, key_sample, self.n_candidates
         ).astype(jnp.float32)
 

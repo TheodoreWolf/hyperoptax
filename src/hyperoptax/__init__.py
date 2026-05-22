@@ -25,12 +25,14 @@ from hyperoptax.spaces import (
     QLinearSpace,
     QLogSpace,
 )
+from hyperoptax.tpe import TPESearch
 
 __all__ = [
     # Optimizers
     "BayesianSearch",
     "GridSearch",
     "RandomSearch",
+    "TPESearch",
     # Spaces
     "DiscreteSpace",
     "LinearSpace",
