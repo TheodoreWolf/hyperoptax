@@ -71,3 +71,38 @@ class TestBayesianTiming:
         ms_per_iter = elapsed / n_max * 1000
         print(f"\noptimize: {ms_per_iter:.1f} ms/iter over {n_max} iters")
         assert ms_per_iter < 10000  # sanity bound
+
+    def test_update_state_throughput(self, capsys):
+        """Regression guard: update_state should be a single fused JIT'd call.
+
+        Before moving the JIT boundary out to update_state, this loop was
+        ~100ms/call (only the inner Adam loop was JIT'd; everything else
+        ran eagerly). After the refactor it's ~1ms/call.
+        """
+        state, optimizer = bayesian.BayesianSearch.init(
+            self.SPACE,
+            n_max=50,
+            n_candidates=200,
+            n_restarts=2,
+            n_lbfgs_steps=10,
+            n_hparam_steps=20,
+            n_parallel=1,
+        )
+        key = jax.random.PRNGKey(0)
+        # seed observations (also triggers compilation)
+        for i in range(5):
+            x = jnp.array([[i * 0.1, i * 0.2]])
+            state = optimizer.update_state(state, key, jnp.array([float(i)]), x)
+        jax.block_until_ready(state.log_length_scale)
+
+        n_calls = 20
+        t0 = time.perf_counter()
+        for i in range(n_calls):
+            x = jnp.array([[0.4 + 0.001 * i, 0.4]])
+            state = optimizer.update_state(state, key, jnp.array([float(i)]), x)
+        jax.block_until_ready(state.log_length_scale)
+        ms = (time.perf_counter() - t0) / n_calls * 1000
+        print(f"\nupdate_state: {ms:.2f} ms/call ({n_calls} calls)")
+        # Guard against regressing the JIT boundary outward — pre-refactor
+        # was ~100ms/call on this hardware, post-refactor is <2ms/call.
+        assert ms < 20, f"update_state slowed to {ms:.1f} ms/call"

@@ -394,7 +394,9 @@ class TestBayesianSearchOptimize:
 
     def test_optimize_minimize(self):
         space = {"x": sp.DiscreteSpace([0.0, 0.25, 0.5, 0.75, 1.0])}
-        state, optimizer = bayesian.BayesianSearch.init(space, n_max=20, n_parallel=1, maximize=False)
+        state, optimizer = bayesian.BayesianSearch.init(
+            space, n_max=20, n_parallel=1, maximize=False
+        )
         func = lambda key, config: config["x"] ** 2
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
         assert int(state.mask.sum()) == 20
@@ -458,7 +460,9 @@ class TestBestParamsResult:
         assert float(params["x"]) == pytest.approx(0.5)
 
     def test_best_result_after_full_optimize(self):
-        state, optimizer = bayesian.BayesianSearch.init(self.space, n_max=10, n_parallel=1)
+        state, optimizer = bayesian.BayesianSearch.init(
+            self.space, n_max=10, n_parallel=1
+        )
         func = lambda key, config: -(config["x"] ** 2)
         state, _ = optimizer.optimize(state, jax.random.PRNGKey(0), func)
         assert float(optimizer.best_result(state)) == pytest.approx(
@@ -667,11 +671,11 @@ class TestGPInternals:
                 self.state, key, jnp.array([y_val]), jnp.array([[x_val]])
             )
 
-    def test_gp_posterior_matches_fit_predict(self):
+    def testget_gp_posterior_matches_fit_predict(self):
         ls = jnp.exp(self.state.log_length_scale)
         eff_y = self.optimizer._effective_y(self.state)
         X_test = jnp.array([[0.3], [0.7]])
-        mean_post, std_post = self.optimizer._gp_posterior(
+        mean_post, std_post = self.optimizer.get_gp_posterior(
             self.state.X, eff_y, self.state.mask, X_test, ls
         )
         L, alpha, ymean = self.optimizer._gp_fit(
@@ -683,11 +687,11 @@ class TestGPInternals:
         assert jnp.allclose(mean_post, mean_fp)
         assert jnp.allclose(std_post, std_fp)
 
-    def test_gp_posterior_returns_correct_shapes(self):
+    def testget_gp_posterior_returns_correct_shapes(self):
         ls = jnp.exp(self.state.log_length_scale)
         eff_y = self.optimizer._effective_y(self.state)
         X_test = jnp.array([[0.2], [0.4], [0.6], [0.8]])
-        mean, std = self.optimizer._gp_posterior(
+        mean, std = self.optimizer.get_gp_posterior(
             self.state.X, eff_y, self.state.mask, X_test, ls
         )
         assert mean.shape == (4,)

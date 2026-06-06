@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from jax.scipy import special as jss
 
-from hyperoptax import base, utils
+from hyperoptax import base, bayesian, utils
 from hyperoptax import spaces as sp
 
 SQRT_2PI = jnp.sqrt(2.0 * jnp.pi)
@@ -49,7 +49,7 @@ def _classify_leaf(leaf):
 
 
 @dataclasses.dataclass
-class TPESearch(base.Optimizer):
+class TPESearch(bayesian.BayesianSearch):
     """Tree-Parzen Estimator hyperparameter optimisation.
 
     Multivariate TPE with EI-weighted observations, Aitchison–Aitken
@@ -100,40 +100,6 @@ class TPESearch(base.Optimizer):
             mask=jnp.zeros(n_max, dtype=bool),
         )
         return state, optimizer
-
-    # ------------------------------------------------------------------
-    # Convenience accessors
-    # ------------------------------------------------------------------
-
-    def best_result(self, state: TPESearchState) -> jax.Array:
-        """Return the best observed raw result (max if maximize, min if minimize)."""
-        if self.maximize:
-            return jnp.max(state.y, where=state.mask, initial=-jnp.inf)
-        else:
-            return jnp.min(state.y, where=state.mask, initial=jnp.inf)
-
-    def best_params(self, state: TPESearchState):
-        """Return the parameter pytree that achieved the best observed result."""
-        if self.maximize:
-            best_n = int(jnp.argmax(jnp.where(state.mask, state.y, -jnp.inf)))
-        else:
-            best_n = int(jnp.argmin(jnp.where(state.mask, state.y, jnp.inf)))
-        x_best = state.X[best_n]
-        _, treedef = jax.tree.flatten(
-            state.space, is_leaf=lambda x: isinstance(x, sp.Space)
-        )
-        return treedef.unflatten([x_best[i] for i in range(treedef.num_leaves)])
-
-    # ------------------------------------------------------------------
-    # Space helpers
-    # ------------------------------------------------------------------
-
-    def _space_bounds(self, space):
-        """Returns (lowers, uppers) arrays of shape (n_params,)."""
-        leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
-        lowers = jnp.array([leaf.lower_bound for leaf in leaves])
-        uppers = jnp.array([leaf.upper_bound for leaf in leaves])
-        return lowers, uppers
 
     def _leaf_kinds(self, space):
         leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
@@ -326,17 +292,6 @@ class TPESearch(base.Optimizer):
         log_denom = jnp.log(jnp.sum(weights) + self.prior_weight + self.eps)
         return log_num - log_denom
 
-    # ------------------------------------------------------------------
-    # Parameter selection
-    # ------------------------------------------------------------------
-
-    def _random_select(self, state, key, X_cands):
-        """Randomly pick n_parallel candidates (used during warmup)."""
-        idxs = jax.random.choice(
-            key, self.n_candidates, (self.n_parallel,), replace=False
-        )
-        return X_cands[idxs]  # (n_parallel, n_params)
-
     def _tpe_select(self, state, key, lowers, uppers, leaf_kinds):
         """Constant Liar: sequential TPE acquisition with mean hallucination."""
         eff_y = self._effective_y(state)
@@ -381,7 +336,14 @@ class TPESearch(base.Optimizer):
             xs_list.append(best_x)
         return jnp.stack(xs_list)  # (n_parallel, n_params)
 
-    def _select_next_x(self, state, key):
+    def get_next_params(self, state, key, params=None, results=None):
+        """Select the next batch of ``n_parallel`` candidates.
+
+        During the first ``n_warmup`` iterations, candidates are chosen
+        uniformly at random. Afterwards, TPE samples candidates from the
+        good-set KDE and selects those maximising ``log l(x) - log g(x)``,
+        with Constant Liar hallucination for the parallel slots.
+        """
         key_sample, key_rest = jax.random.split(key)
         leaves = jax.tree.leaves(state.space, is_leaf=lambda x: isinstance(x, sp.Space))
         _, treedef = jax.tree.flatten(
@@ -401,32 +363,16 @@ class TPESearch(base.Optimizer):
             key_rest,
         )
 
+        # Transforms are element-wise, so vectorise the n_parallel axis.
         xs_out = jnp.stack(
-            [
-                jnp.stack(
-                    [
-                        leaf.transform(xs_raw[j, i : i + 1]).squeeze()
-                        for i, leaf in enumerate(leaves)
-                    ]
-                )
-                for j in range(self.n_parallel)
-            ]
+            [leaf.transform(xs_raw[:, i]) for i, leaf in enumerate(leaves)],
+            axis=-1,
         )  # (n_parallel, n_params)
 
         batch_params = treedef.unflatten(
             [xs_out[:, i] for i in range(treedef.num_leaves)]
         )
         return batch_params
-
-    def get_next_params(self, state, key, params=None, results=None):
-        """Select the next batch of ``n_parallel`` candidates.
-
-        During the first ``n_warmup`` iterations, candidates are chosen
-        uniformly at random. Afterwards, TPE samples candidates from the
-        good-set KDE and selects those maximising ``log l(x) - log g(x)``,
-        with Constant Liar hallucination for the parallel slots.
-        """
-        return self._select_next_x(state, key)
 
     def _write_observation_batch(self, state, x_new, results, n):
         """Write n_parallel observations into the padded buffers starting at slot n."""
@@ -464,18 +410,3 @@ class TPESearch(base.Optimizer):
         n = state.mask.sum()
         return self._write_observation_batch(state, x_new, results, n)
 
-    def _n_iterations(self, state):
-        remaining = state.X.shape[0] - int(state.mask.sum())
-        n_full = remaining // self.n_parallel
-        has_overflow = (remaining % self.n_parallel) > 0
-        return n_full + (1 if has_overflow else 0)
-
-    def optimize(self, state, key, func, n_iterations=None):
-        if n_iterations is None:
-            n_iterations = self._n_iterations(state)
-        return super().optimize(state, key, func, n_iterations)
-
-    def optimize_scan(self, state, key, func, n_iterations=None):
-        if n_iterations is None:
-            n_iterations = self._n_iterations(state)
-        return super().optimize_scan(state, key, func, n_iterations)
