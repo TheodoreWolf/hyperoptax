@@ -1,151 +1,188 @@
 <img src="./assets/logo-transparent.png" alt="Hyperoptax Logo" style="width:100%; margin-bottom: 1.5em;"/>
 
-# Hyperoptax: Parallel hyperparameter tuning with JAX
+# Hyperoptax: parallel hyperparameter tuning with JAX
 
 [![PyPI version](https://img.shields.io/pypi/v/hyperoptax)](https://pypi.org/project/hyperoptax)
 ![CI status](https://github.com/TheodoreWolf/hyperoptax/actions/workflows/test.yml/badge.svg?branch=main)
 [![codecov](https://codecov.io/gh/TheodoreWolf/hyperoptax/graph/badge.svg?token=Y582MZ25GG)](https://codecov.io/gh/TheodoreWolf/hyperoptax)
 
+Hyperoptax is a small, functional hyperparameter-optimization library for JAX.
+It supports nested PyTree search spaces, batched candidate evaluation, Python and
+`jax.lax.scan` loops, and random, grid, and Gaussian-process Bayesian search.
 
-## ⛰️ Introduction
-
-Hyperoptax is a lightweight toolbox for parallel hyperparameter optimization of pure JAX functions. It provides a concise API that lets you wrap any JAX-compatible loss or evaluation function and search across spaces __in parallel__  – all while staying in pure JAX.
-
-## 🏗️ Installation
-
-```bash
-pip install hyperoptax
-```
-
-If you want to use the notebooks:
-```bash
-pip install hyperoptax[notebooks]
-```
-
-If you do not yet have JAX installed, pick the right wheel for your accelerator:
+## Installation
 
 ```bash
-# CPU-only
-pip install --upgrade "jax[cpu]"
-# or GPU/TPU – see the official JAX installation guide
+uv pip install hyperoptax
 ```
 
-## 🥜 In a nutshell
+Install the optional notebook dependencies with:
 
+```bash
+uv pip install "hyperoptax[notebooks]"
+```
 
-All optimizers follow the same stateless pattern: `Optimizer.init` returns a `(state, optimizer)` pair, and `optimizer.optimize` runs the search loop. Your objective function must have the signature `fn(key, params) -> scalar`. Importantly, `params` can be _any_ PyTree.
+Hyperoptax requires Python 3.10 or newer. For accelerator-specific JAX wheels,
+follow the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html).
 
+## Quick start
+
+Every optimizer follows the same functional pattern: `init` returns an immutable
+state PyTree and an optimizer, and the objective has signature
+`objective(key, params) -> scalar`.
 
 ```python
 import jax
-from hyperoptax import BayesianSearch, LogSpace, LinearSpace
+import jax.numpy as jnp
 
-def train_nn(key, params):
-    learning_rate = params["learning_rate"]
-    final_lr_pct = params["final_lr_pct"]
-    ...
-    return val_loss  # scalar, lower is better
+from hyperoptax import BayesianSearch, LinearSpace, LogSpace
 
-search_space = {
+
+def objective(key, params):
+    noise = 0.01 * jax.random.normal(key)
+    return (
+        (jnp.log10(params["learning_rate"]) + 3.0) ** 2
+        + (params["dropout"] - 0.2) ** 2
+        + noise
+    )
+
+
+space = {
     "learning_rate": LogSpace(1e-5, 1e-1),
-    "final_lr_pct": LinearSpace(0.01, 0.5),
+    "dropout": LinearSpace(0.0, 0.5),
 }
 
 state, optimizer = BayesianSearch.init(
-    search_space,
-    n_max=100,       # observation buffer size (= number of iterations)
-    n_parallel=4,    # Parallel workers per step
+    space,
+    n_max=80,
+    n_parallel=4,
     maximize=False,
 )
-
-state, (params_hist, results_hist) = optimizer.optimize(
-    state, jax.random.PRNGKey(0), train_nn
+state, (params_history, results_history) = optimizer.optimize_scan(
+    state,
+    jax.random.PRNGKey(0),
+    objective,
+    n_iterations=20,
 )
-# params_hist: list of pytrees, one per iteration (each leaf has shape (n_parallel,))
-# results_hist: list of arrays, one per iteration (each has shape (n_parallel,))
 
-# Retrieve best result
 print(optimizer.best_result(state))
 print(optimizer.best_params(state))
 ```
 
-Other available optimizers:
+Here `n_iterations=20` and `n_parallel=4` perform 80 objective evaluations.
+For buffered optimizers, `n_max` is the number of observations the state can
+store, not the number of iterations. Keep `n_max` divisible by `n_parallel` to
+avoid evaluating a partially storable final batch.
+
+## Choosing an optimizer
+
+| Optimizer | Best suited to | Important constraints |
+|---|---|---|
+| `RandomSearch` | Cheap baseline and broad exploration | Stateless; does not retain observations |
+| `GridSearch` | Small, explicitly enumerated grids | Every leaf must be a numeric `DiscreteSpace`; make the grid size divisible by `n_parallel` |
+| `BayesianSearch` | Expensive, smooth objectives | Fixed `n_max` buffer; GP cost grows with the buffer size |
+
+All spaces may be nested in arbitrary dict/list/tuple PyTrees. Available leaf
+types are `LinearSpace`, `LogSpace`, `DiscreteSpace`, `QLinearSpace`, and
+`QLogSpace`. `DiscreteSpace` values must be numeric because optimizers represent
+candidates as JAX arrays.
+
+### Random and grid search
 
 ```python
-from hyperoptax import RandomSearch, GridSearch, DiscreteSpace
+from hyperoptax import DiscreteSpace, GridSearch, RandomSearch
 
-# Random search
-state, optimizer = RandomSearch.init(search_space, n_parallel=8)
-state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=50)
-
-# Grid search (DiscreteSpace only)
-# Note: shuffle=True
-grid_space = {"lr": DiscreteSpace([1e-4, 1e-3, 1e-2]), "dropout": DiscreteSpace([0.1, 0.3, 0.5])}
-state, optimizer = GridSearch.init(grid_space)
-state, history = optimizer.optimize(state, jax.random.PRNGKey(0), train_nn, n_iterations=9)
-```
-
-### `optimize_scan()` — JAX-native loop
-
-`optimize_scan()` has the same signature as `optimize()` but uses `jax.lax.scan` internally.
-This requires your objective function to be JAX-traceable (jit-compilable), and returns
-**stacked arrays** rather than Python lists:
-
-```python
-state, (params_hist, results_hist) = optimizer.optimize_scan(
-    state, jax.random.PRNGKey(0), train_nn, n_iterations=25
+# Random search: 10 batches of 8 independent samples.
+random_state, random_search = RandomSearch.init(space, n_parallel=8)
+random_state, random_history = random_search.optimize(
+    random_state, jax.random.PRNGKey(1), objective, n_iterations=10
 )
-# params_hist: pytree where each leaf has shape (n_iterations, n_parallel, ...)
-# results_hist: array of shape (n_iterations, n_parallel)
+
+# Grid search: six points, evaluated two at a time.
+grid_space = {
+    "width": DiscreteSpace((64, 128, 256)),
+    "depth": DiscreteSpace((2, 4)),
+}
+grid_state, grid_search = GridSearch.init(grid_space, n_parallel=2)
 ```
 
-> **Return type difference:** `optimize()` returns Python lists (easy to index by iteration),
-> while `optimize_scan()` returns stacked JAX arrays (compatible with `jax.jit`, faster for
-> JAX-traceable objectives). Choose based on your objective function and use case.
+Pass `shuffle=True` and an explicit PRNG key to randomize grid traversal
+reproducibly:
 
-## 💪 Hyperoptax in action
-<img src="./assets/gp_animation.gif" alt="BayesOpt animation" style="width:80%;"/>
+```python
+grid_state, grid_search = GridSearch.init(
+    grid_space,
+    key=jax.random.PRNGKey(2),
+    shuffle=True,
+    n_parallel=2,
+)
+```
 
-## 🔪 The Sharp Bits
+## Python loop versus JAX scan
 
-Since we are working in pure JAX the same [sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html) apply. Some consequences of this for hyperoptax:
-1. Parameters that change the length of an evaluation (e.g: epochs, generations...) can't be optimized in parallel.
-2. Neural network structures can't be optimized in parallel either.
-3. Strings can't be used as hyperparameters.
+`optimize()` runs the outer loop in Python and returns lists indexed by
+iteration:
 
-## 🫂 Contributing
+- `params_history`: list of PyTrees whose leaves have leading shape
+  `(n_parallel, ...)`.
+- `results_history`: list of arrays with shape `(n_parallel,)`.
 
-We welcome pull requests! To get started:
+`optimize_scan()` uses `jax.lax.scan`, requires a JAX-traceable objective, and
+returns stacked arrays:
 
-1. Open an issue describing the bug or feature.
-2. Fork the repository and create a feature branch (`git checkout -b user/my-feature`).
-3. Clone and install dependencies. We recommend [uv](https://docs.astral.sh/uv/) for environment management:
+- `params_history`: PyTree with leaf shape
+  `(n_iterations, n_parallel, ...)`.
+- `results_history`: array with shape `(n_iterations, n_parallel)`.
+
+Both paths use `jax.vmap` to evaluate each batch. Use the lower-level
+`get_next_params` and `update_state` methods when evaluations must run in an
+external system.
+
+## JAX constraints
+
+The usual [JAX sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html)
+apply:
+
+1. The objective must accept a PRNG key and one unbatched parameter PyTree, and
+   return a scalar.
+2. Every batch is evaluated with `jax.vmap`; data-dependent Python control flow
+   and side effects are not supported.
+3. Strings and variable-shaped model structures cannot be represented as
+   batched JAX hyperparameters. Encode categorical choices numerically and map
+   them to host-side labels where needed.
+4. Parameters that change evaluation shape or duration can interact poorly with
+   parallel batches; use `n_parallel=1` when evaluations cannot be synchronized.
+
+## Notebooks
+
+See [`notebooks/`](notebooks/) for grid/Bayesian search examples, design
+studies, high-dimensional behavior, performance comparisons, RL tuning, and GP
+visualization.
+
+## Contributing
 
 ```bash
 git clone https://github.com/TheodoreWolf/hyperoptax
 cd hyperoptax
 uv pip install -e ".[all]"
+uv run pytest -m "not timing"
+uv run ruff check src tests
+uv run ruff format --check src tests
 ```
 
-4. Run the test suite:
-
-```bash
-uv run pytest
-```
-5. Ensure the notebooks still work.
-6. Format your code with `ruff`.
-7. Submit a pull request.
+The full suite includes optional timing tests; run `uv run pytest` when you want
+those as well. Please keep objectives reproducible by passing and splitting JAX
+PRNG keys explicitly.
 
 ## Roadmap
-I'm developing this both as a passion project and for my work in my PhD. I have a few ideas on where to go with this library:
-- Callbacks!
-- Reduce redundant kernel recomputation — currently the full K matrix is rebuilt each iteration when only the new row/column is needed.
-- Length scale tuning currently uses a fixed Adam step count; smarter convergence criteria could help.
-- Tree Parzen Estimator (TPE), this is essentially SOTA for hyperparameter search, implementing this would be super cool!
 
-## 📝 Citation
+- Add callbacks for logging and early stopping.
+- Reuse GP kernel blocks instead of rebuilding the full matrix each iteration.
+- Replace the fixed number of length-scale Adam steps with a convergence-aware
+  stopping criterion.
+- Add more optimizer families for mixed and cost-sensitive search spaces.
 
-If you use Hyperoptax in academic work, please cite:
+## Citation
 
 ```bibtex
 @misc{hyperoptax,

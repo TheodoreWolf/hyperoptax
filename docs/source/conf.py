@@ -5,6 +5,7 @@
 
 import os
 import sys
+from importlib.metadata import version as package_version
 
 # Add the source directory to Python path so Sphinx can find the modules
 sys.path.insert(0, os.path.abspath("../../src"))
@@ -13,37 +14,29 @@ sys.path.insert(0, os.path.abspath("../../src"))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "Hyperoptax"
-copyright = "2025, Theo Wolf"
+copyright = "2025-2026, Theo Wolf"
 author = "Theo Wolf"
-release = "0.1.6"
+release = package_version("hyperoptax")
+version = release
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    "sphinx.ext.autodoc",  # Auto-generate docs from docstrings
-    "sphinx.ext.autosummary",  # Generate summary tables
-    "sphinx.ext.viewcode",  # Add source code links
-    "sphinx.ext.napoleon",  # Support for NumPy/Google style docstrings
-    "sphinx.ext.intersphinx",  # Link to other project docs
-    # "myst_parser",  # Markdown support (temporarily disabled)
-    # "nbsphinx",  # Jupyter notebook support (may cause issues)
+    "sphinx.ext.autodoc",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
 ]
 
-templates_path = ["_templates"]
-exclude_patterns = []
+exclude_patterns = ["_build"]
 
 # Autodoc configuration
 autodoc_default_options = {
     "members": True,
     "member-order": "bysource",
-    "special-members": "__init__",
-    "undoc-members": True,
-    "exclude-members": "__weakref__",
+    "show-inheritance": True,
 }
-
-# Autosummary configuration
-autosummary_generate = True
 
 # Include type hints in the description rather than the signature so that
 # Sphinx Napoleon + autodoc produce cleaner function/class signatures.
@@ -58,7 +51,7 @@ napoleon_include_private_with_doc = False
 # Intersphinx mapping to link to external docs
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
-    "jax": ("https://jax.readthedocs.io/en/latest/", None),
+    "jax": ("https://docs.jax.dev/en/latest/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
 
@@ -84,8 +77,8 @@ html_theme_options = {
     # Disable expansion to keep a fixed navigation layout
     "collapse_navbar": True,
     "logo": {
-        "image_light": "_static/manifold.png",
-        "image_dark": "_static/manifold.png",
+        "image_light": "../../assets/logo-transparent.png",
+        "image_dark": "../../assets/logo-transparent.png",
         "text": "Hyperoptax",
         "alt_text": "Hyperoptax - Parallel hyperparameter tuning with JAX",
     },

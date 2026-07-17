@@ -1,41 +1,24 @@
-Examples and Tutorials
-======================
+Notebooks
+=========
 
-Learn how to use Hyperoptax through practical examples and tutorials.
+The repository contains executable studies rather than embedding notebook
+outputs in the documentation build:
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Examples:
+* `Search examples <https://github.com/TheodoreWolf/hyperoptax/blob/main/notebooks/search.ipynb>`_:
+  grid search and Bayesian optimization.
+* `Bayesian optimization design study <https://github.com/TheodoreWolf/hyperoptax/blob/main/notebooks/bo_design_study.ipynb>`_:
+  acquisition functions and their hyperparameters.
+* `High-dimensional behavior <https://github.com/TheodoreWolf/hyperoptax/blob/main/notebooks/high_dimensional.ipynb>`_:
+  Bayesian versus random search from 10 to 1,000 dimensions.
+* `Performance comparison <https://github.com/TheodoreWolf/hyperoptax/blob/main/notebooks/performance.ipynb>`_:
+  comparisons with other optimization libraries and batch sizes.
+* `RL hyperparameters <https://github.com/TheodoreWolf/hyperoptax/blob/main/notebooks/rl_hparams.ipynb>`_:
+  tuning Rejax reinforcement-learning runs.
+* `Bayesian optimization visualization <https://github.com/TheodoreWolf/hyperoptax/blob/main/notebooks/visualization.ipynb>`_:
+  GP posterior and acquisition behavior.
 
-   ../../../notebooks/search
-   ../../../notebooks/performance
-   ../../../notebooks/rl_hparams
-   ../../../notebooks/visualization
+Install the optional dependencies before running them:
 
-Quick Examples
---------------
+.. code-block:: console
 
-Grid Search Example
-~~~~~~~~~~~~~~~~~~~
-
-Basic usage of grid search for hyperparameter optimization.
-
-Bayesian Optimization Example
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Using Bayesian optimization with Gaussian processes for efficient hyperparameter search.
-
-Performance Comparison
-~~~~~~~~~~~~~~~~~~~~~
-
-Comparing Hyperoptax with other optimization libraries.
-
-Reinforcement Learning
-~~~~~~~~~~~~~~~~~~~~~
-
-Hyperparameter tuning for RL algorithms using Rejax.
-
-Visualization
-~~~~~~~~~~~~
-
-Visualizing the Bayesian optimization process. 
+   uv pip install -e ".[notebooks]"
