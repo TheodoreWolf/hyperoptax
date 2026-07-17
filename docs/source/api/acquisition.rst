@@ -1,32 +1,37 @@
-Acquisition Functions
-====================
+Acquisition and hallucination strategies
+========================================
 
-Acquisition functions determine which points to evaluate next in Bayesian optimization.
+Bayesian search scores candidate points with an acquisition function.
+Probability of improvement is the default; expected improvement and upper
+confidence bound are also available.
+
+Parallel Bayesian batches are selected sequentially. After each selection, a
+hallucination strategy supplies a temporary objective value so the following
+slot explores a different part of the posterior. Posterior sampling is the
+default; mean, UCB, and constant strategies are available.
+
+.. code-block:: python
+
+   from hyperoptax import BayesianSearch, EI, MeanHallucination, UCB
+
+   state, optimizer = BayesianSearch.init(
+       space,
+       n_max=80,
+       n_parallel=4,
+       acquisition=EI(xi=0.01),
+       hallucination=MeanHallucination(),
+   )
+
+   # UCB is an alternative acquisition strategy.
+   state, optimizer = BayesianSearch.init(
+       space,
+       n_max=80,
+       acquisition=UCB(kappa=2.0),
+   )
+
+API
+---
 
 .. automodule:: hyperoptax.acquisition
    :members:
-   :undoc-members:
    :show-inheritance:
-
-Usage Examples
---------------
-
-Upper Confidence Bound (UCB)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from hyperoptax.acquisition import UCB
-   
-   # Create UCB acquisition function
-   acq = UCB(kappa=2.0)
-
-Expected Improvement (EI)
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from hyperoptax.acquisition import EI
-   
-   # Create EI acquisition function
-   acq = EI(xi=0.01) 

@@ -1,32 +1,28 @@
 Kernels
 =======
 
-Kernels are used by the Gaussian process in Bayesian optimization to model function similarity.
+Bayesian search uses a Matérn kernel with ``nu=0.5`` by default. RBF and Matérn
+kernels accept scalar initial length scales; Bayesian search maintains and tunes
+per-dimension ARD length scales in optimizer state.
+
+.. code-block:: python
+
+   from hyperoptax import BayesianSearch, Matern, RBF
+
+   state, optimizer = BayesianSearch.init(
+       space,
+       n_max=80,
+       kernel=Matern(length_scale=1.0, nu=1.5),
+   )
+
+   rbf = RBF(length_scale=0.5)
+
+The supported Matérn smoothness values are ``0.5``, ``1.5``, ``2.5``, and
+``float("inf")``. The infinite-smoothness case is equivalent to RBF.
+
+API
+---
 
 .. automodule:: hyperoptax.kernels
    :members:
-   :undoc-members:
    :show-inheritance:
-
-Usage Examples
---------------
-
-RBF Kernel
-~~~~~~~~~~~
-
-.. code-block:: python
-
-   from hyperoptax.kernels import RBF
-   
-   # Create RBF kernel with length scale 1.0
-   kernel = RBF(length_scale=1.0)
-
-Matern Kernel
-~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from hyperoptax.kernels import Matern
-   
-   # Create Matern kernel with custom parameters
-   kernel = Matern(length_scale=1.0, nu=2.5) 

@@ -1,36 +1,34 @@
 Optimizers
 ==========
 
-Hyperoptax provides several optimization algorithms for hyperparameter tuning.
+All optimizers implement the functional interface defined by
+:class:`hyperoptax.base.Optimizer`: initialize state, request a batch, evaluate
+it, then update state with the results.
 
-Base Optimizer
+Base interface
 --------------
 
 .. automodule:: hyperoptax.base
    :members:
-   :undoc-members:
    :show-inheritance:
 
-Bayesian Optimizer
-------------------
-
-.. automodule:: hyperoptax.bayesian
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Grid Search
------------
-
-.. automodule:: hyperoptax.grid
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Random Search
+Random search
 -------------
 
 .. automodule:: hyperoptax.random
    :members:
-   :undoc-members:
+   :show-inheritance:
+
+Grid search
+-----------
+
+.. automodule:: hyperoptax.grid
+   :members:
+   :show-inheritance:
+
+Bayesian search
+---------------
+
+.. automodule:: hyperoptax.bayesian
+   :members:
    :show-inheritance:
