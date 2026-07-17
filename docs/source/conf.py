@@ -77,8 +77,8 @@ html_theme_options = {
     # Disable expansion to keep a fixed navigation layout
     "collapse_navbar": True,
     "logo": {
-        "image_light": "_static/manifold.png",
-        "image_dark": "_static/manifold.png",
+        "image_light": "../../assets/logo-transparent.png",
+        "image_dark": "../../assets/logo-transparent.png",
         "text": "Hyperoptax",
         "alt_text": "Hyperoptax - Parallel hyperparameter tuning with JAX",
     },
