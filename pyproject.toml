@@ -9,6 +9,11 @@ license = "Apache-2.0"
 authors = [{name = "Theo Wolf"}]
 
 [project.optional-dependencies]
+dashboard = [
+    "fastapi>=0.116",
+    "scikit-learn>=1.5",
+    "uvicorn>=0.35",
+]
 notebooks = [
     "flax",
     "jupyter",
@@ -21,6 +26,7 @@ notebooks = [
 ]
 # Testing
 testing = [
+    "httpx>=0.28",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1"
 ]
@@ -40,6 +46,12 @@ all = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["hyperoptax*"]
+
+[tool.setuptools.package-data]
+"hyperoptax.dashboard" = ["static/*"]
+
+[project.scripts]
+hyperoptax = "hyperoptax.dashboard.cli:main"
 
 [build-system]
 requires = ["setuptools >= 77.0.3"]

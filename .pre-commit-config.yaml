@@ -1,3 +1,5 @@
+exclude: ^src/hyperoptax/dashboard/static/plotly\.min\.js$
+
 repos:
   # General pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -8,6 +10,7 @@ repos:
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files
+        exclude: ^src/hyperoptax/dashboard/static/logo-transparent\.png$
       - id: check-merge-conflict
       - id: debug-statements
       - id: check-docstring-first
@@ -36,4 +39,4 @@ repos:
     hooks:
       - id: nbqa-ruff
         args: [--fix]
-      - id: nbqa-ruff-format 
+      - id: nbqa-ruff-format

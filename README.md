@@ -22,6 +22,12 @@ Install the optional notebook dependencies with:
 uv pip install "hyperoptax[notebooks]"
 ```
 
+Install the local dashboard and live SQLite recorder with:
+
+```bash
+uv pip install "hyperoptax[dashboard]"
+```
+
 Hyperoptax requires Python 3.10 or newer. For accelerator-specific JAX wheels,
 follow the [JAX installation guide](https://docs.jax.dev/en/latest/installation.html).
 
@@ -138,6 +144,115 @@ Both paths use `jax.vmap` to evaluate each batch. Use the lower-level
 `get_next_params` and `update_state` methods when evaluations must run in an
 external system.
 
+## Live dashboard
+
+To view the quick-start study live, replace its `optimize_scan()` call with the
+Python loop and a recorder callback:
+
+```python
+from hyperoptax.dashboard import SQLiteRecorder, StudyConfig
+
+study = StudyConfig(
+    name="quick-start",
+    direction="minimize",
+    optimizer_name=type(optimizer).__name__,
+    optimizer_config={"n_max": 80, "maximize": False},
+    search_space=space,
+    n_parallel=optimizer.n_parallel,
+    seed=0,
+)
+
+with SQLiteRecorder("results.sqlite3", study=study) as recorder:
+    state, (params_history, results_history) = optimizer.optimize(
+        state,
+        jax.random.PRNGKey(0),
+        objective,
+        n_iterations=20,
+        callback=recorder,
+    )
+```
+
+Once the recorder has created the database, start the dashboard in another
+terminal on the same host:
+
+```bash
+hyperoptax dashboard results.sqlite3
+```
+
+The server listens on loopback by default. For a remote run, keep the database
+and dashboard on the recorder host, then forward the printed port from your
+laptop, using `ProxyJump` as needed:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 user@remote-host
+```
+
+Open <http://127.0.0.1:8080> locally. `optimize_scan()` intentionally has no
+callback because its iterations execute inside compiled `jax.lax.scan`; its
+history is available only after the scan returns and is therefore bulk-only.
+Use `optimize()` when the dashboard must update during a run.
+
+Callback-recorded trials include the observed batch wall time from objective
+launch through host synchronization. Every member of a parallel batch receives
+the same duration and `metadata.duration_scope="parallel_batch"`; the first
+batch can include JAX compilation, so compare costs only across compatible
+hardware and execution modes. Imported histories keep timing unset rather than
+inventing it.
+
+Import a completed history from either loop shape without inventing trial
+timestamps:
+
+```python
+from hyperoptax.dashboard import import_history
+
+import_history(
+    "results.sqlite3",
+    study=study,
+    params_history=params_history,
+    results_history=results_history,
+)
+```
+
+Use SQLite's online backup API before copying a database that may still be
+written, and export bounded study queries to JSON or CSV:
+
+```bash
+hyperoptax snapshot results.sqlite3 --output results-snapshot.sqlite3
+hyperoptax export results.sqlite3 --study STUDY_UUID --output trials.csv
+hyperoptax export results.sqlite3 --study STUDY_UUID --output best.json \
+  --query @trial-query.json
+```
+
+The dashboard's typed Python query surface is `StudyQueryService`; the same
+read-only operations are available under `/api/v1` with an OpenAPI schema at
+`/api/v1/openapi.json`. This is the intended interface for coding agents and
+other clients—neither needs to automate the browser or depend on the SQLite
+schema.
+
+The experiment explorer can place any numeric trial field on X or Y, colour by
+a third field, switch axes between linear and logarithmic scales, and apply two
+numeric range filters. Its state is encoded in the URL, while **Copy view JSON**
+produces the versioned declarative recipe intended for agents and reproducible
+analysis. Clicking a plot point or trial ID opens the complete trial
+configuration without requiring direct SQLite access.
+
+When objective and recorded duration are selected, the explorer can overlay the
+direction-aware Pareto front. Agents can query the same result directly:
+
+```text
+GET /api/v1/studies/{study_id}/pareto
+    ?x_field=duration_seconds
+    &y_field=objective_value
+    &x_direction=minimize
+    &y_direction=maximize
+```
+
+The Parameters section also reports study-level hyperparameter importance. It
+fits a deterministic 200-tree `RandomForestRegressor` to completed trials and
+shows its impurity-based feature importance beside Pearson's linear correlation.
+Only numeric parameters present in every completed trial are included; both
+measures are descriptive rather than causal.
+
 ## JAX constraints
 
 The usual [JAX sharp bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html)
@@ -157,7 +272,8 @@ apply:
 
 See [`notebooks/`](notebooks/) for grid/Bayesian search examples, design
 studies, high-dimensional behavior, performance comparisons, RL tuning, and GP
-visualization.
+visualization. [`dashboard_sweep.ipynb`](notebooks/dashboard_sweep.ipynb) is the
+reproducible Branin sweep used to exercise live recording and the dashboard.
 
 ## Contributing
 
@@ -176,7 +292,7 @@ PRNG keys explicitly.
 
 ## Roadmap
 
-- Add callbacks for logging and early stopping.
+- Add explicit early-stopping controls.
 - Reuse GP kernel blocks instead of rebuilding the full matrix each iteration.
 - Replace the fixed number of length-scale Adam steps with a convergence-aware
   stopping criterion.

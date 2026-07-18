@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Hyperoptax dashboard</title>
+    <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="static/app.css">
+    <script defer src="static/plotly.min.js"></script>
+    <script type="module" src="static/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to results</a>
+
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Hyperoptax dashboard home">
+        <img
+          class="brand-logo"
+          src="static/logo-transparent.png"
+          alt=""
+          width="96"
+          height="59"
+        >
+      </a>
+
+      <div class="topbar-actions">
+        <label class="field study-picker" for="study-select">
+          <span>Study</span>
+          <select id="study-select" disabled>
+            <option>Loading studies…</option>
+          </select>
+        </label>
+        <button id="theme-toggle" class="button button-quiet" type="button">
+          Theme: system
+        </button>
+        <p id="connection-status" class="connection" role="status">
+          <span class="connection-dot" aria-hidden="true"></span>
+          Connecting
+        </p>
+      </div>
+    </header>
+
+    <main id="main-content" class="page-shell">
+      <section id="loading-state" class="message-state" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>Loading results</h1>
+        <p>Reading the local study database.</p>
+      </section>
+
+      <section id="empty-state" class="message-state" hidden>
+        <h1>No studies yet</h1>
+        <p>Record or import a Hyperoptax study, then refresh this page.</p>
+        <button id="empty-refresh" class="button" type="button">Refresh</button>
+      </section>
+
+      <section id="error-state" class="message-state" role="alert" hidden>
+        <h1>Dashboard unavailable</h1>
+        <p id="error-message">The local API did not respond.</p>
+        <button id="error-retry" class="button" type="button">Try again</button>
+      </section>
+
+      <div id="dashboard" hidden>
+        <section class="study-heading" aria-labelledby="study-title">
+          <div>
+            <p class="eyebrow">Study overview</p>
+            <h1 id="study-title">Study</h1>
+            <p id="study-description" class="subtle"></p>
+          </div>
+          <div id="study-tags" class="tag-list" aria-label="Study tags"></div>
+        </section>
+
+        <section class="summary-grid" aria-label="Study summary">
+          <article class="summary-card">
+            <p>Best objective</p>
+            <strong id="summary-best">—</strong>
+            <span id="summary-best-context">No completed trials</span>
+          </article>
+          <article class="summary-card">
+            <p>Trials</p>
+            <strong id="summary-trials">—</strong>
+            <span id="summary-trials-context">Loading</span>
+          </article>
+          <article class="summary-card">
+            <p>Status</p>
+            <strong id="summary-status">—</strong>
+            <span id="summary-updated">Not refreshed</span>
+          </article>
+          <article class="summary-card">
+            <p>Optimizer</p>
+            <strong id="summary-optimizer">—</strong>
+            <span id="summary-direction">—</span>
+          </article>
+        </section>
+
+        <nav class="section-nav" aria-label="Study sections">
+          <a href="#overview">Overview</a>
+          <a href="#parameters">Parameters</a>
+          <a href="#trials">Trials</a>
+        </nav>
+
+        <section class="filter-bar" aria-labelledby="filters-title">
+          <div class="filter-heading">
+            <div>
+              <h2 id="filters-title">Filter trials</h2>
+              <p id="filter-summary" class="subtle">All loaded trials</p>
+            </div>
+            <button id="reset-filters" class="button button-quiet" type="button">
+              Reset filters
+            </button>
+          </div>
+          <div class="filter-controls">
+            <label class="field" for="trial-search">
+              <span>Search</span>
+              <input
+                id="trial-search"
+                type="search"
+                placeholder="Name, ID, state, or value"
+              >
+            </label>
+            <label class="field" for="state-filter">
+              <span>State</span>
+              <select id="state-filter">
+                <option value="">All states</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section id="overview" class="content-section" aria-labelledby="overview-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Progress</p>
+              <h2 id="overview-title">Objective history</h2>
+            </div>
+            <p class="subtle">Select a point to find its trial in the table.</p>
+          </div>
+          <div class="chart-grid">
+            <article class="chart-panel" aria-labelledby="history-chart-title">
+              <h3 id="history-chart-title">Objective by evaluation</h3>
+              <div id="history-chart" class="plot" role="img" aria-label="Objective value by evaluation index"></div>
+            </article>
+            <article class="chart-panel" aria-labelledby="best-chart-title">
+              <h3 id="best-chart-title">Best so far</h3>
+              <div id="best-chart" class="plot" role="img" aria-label="Best objective value achieved so far"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="parameters" class="content-section" aria-labelledby="parameters-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Search space</p>
+              <h2 id="parameters-title">Parameter relationships</h2>
+            </div>
+            <p class="subtle">Compose a view, inspect a point, or brush parallel axes.</p>
+          </div>
+          <article class="chart-panel explorer-panel" aria-labelledby="explorer-chart-title">
+            <div class="explorer-heading">
+              <div>
+                <h3 id="explorer-chart-title">Experiment explorer</h3>
+                <p id="explorer-note" class="chart-caption"></p>
+              </div>
+              <div class="explorer-actions">
+                <button id="copy-view-link" class="button button-quiet" type="button">
+                  Copy link
+                </button>
+                <button id="copy-view-spec" class="button button-quiet" type="button">
+                  Copy view JSON
+                </button>
+              </div>
+            </div>
+            <div class="explorer-controls" aria-label="Experiment explorer controls">
+              <label class="field" for="explorer-x">
+                <span>X axis</span>
+                <select id="explorer-x"></select>
+              </label>
+              <label class="field field-compact" for="explorer-x-scale">
+                <span>X scale</span>
+                <select id="explorer-x-scale">
+                  <option value="linear">Linear</option>
+                  <option value="log">Log</option>
+                </select>
+              </label>
+              <label class="field" for="explorer-y">
+                <span>Y axis</span>
+                <select id="explorer-y"></select>
+              </label>
+              <label class="field field-compact" for="explorer-y-scale">
+                <span>Y scale</span>
+                <select id="explorer-y-scale">
+                  <option value="linear">Linear</option>
+                  <option value="log">Log</option>
+                </select>
+              </label>
+              <label class="field" for="explorer-color">
+                <span>Colour</span>
+                <select id="explorer-color"></select>
+              </label>
+              <label class="check-field" for="explorer-pareto">
+                <input id="explorer-pareto" type="checkbox">
+                <span>Objective–duration Pareto front</span>
+              </label>
+            </div>
+            <div class="explorer-filters" aria-label="Experiment explorer ranges">
+              <div class="range-filter">
+                <label class="field" for="explorer-filter-1-field">
+                  <span>Range filter 1</span>
+                  <select id="explorer-filter-1-field"></select>
+                </label>
+                <label class="field" for="explorer-filter-1-min">
+                  <span>Minimum</span>
+                  <input id="explorer-filter-1-min" type="number" inputmode="decimal">
+                </label>
+                <label class="field" for="explorer-filter-1-max">
+                  <span>Maximum</span>
+                  <input id="explorer-filter-1-max" type="number" inputmode="decimal">
+                </label>
+              </div>
+              <div class="range-filter">
+                <label class="field" for="explorer-filter-2-field">
+                  <span>Range filter 2</span>
+                  <select id="explorer-filter-2-field"></select>
+                </label>
+                <label class="field" for="explorer-filter-2-min">
+                  <span>Minimum</span>
+                  <input id="explorer-filter-2-min" type="number" inputmode="decimal">
+                </label>
+                <label class="field" for="explorer-filter-2-max">
+                  <span>Maximum</span>
+                  <input id="explorer-filter-2-max" type="number" inputmode="decimal">
+                </label>
+              </div>
+            </div>
+            <p id="view-feedback" class="chart-caption" aria-live="polite"></p>
+            <div
+              id="explorer-chart"
+              class="plot plot-explorer"
+              role="img"
+              aria-label="Configurable scatter plot of completed trials"
+            ></div>
+          </article>
+          <div class="chart-grid chart-grid-parameters">
+            <article class="chart-panel" aria-labelledby="parallel-chart-title">
+              <h3 id="parallel-chart-title">Parallel coordinates</h3>
+              <div id="parallel-chart" class="plot plot-tall" role="img" aria-label="Parallel coordinates for numeric parameters and objective"></div>
+            </article>
+            <article class="chart-panel" aria-labelledby="importance-chart-title">
+              <h3 id="importance-chart-title">Hyperparameter importance</h3>
+              <p id="importance-note" class="chart-caption"></p>
+              <div
+                id="importance-chart"
+                class="plot plot-tall"
+                role="img"
+                aria-label="Random forest hyperparameter importance and Pearson correlation"
+              ></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="trials" class="content-section" aria-labelledby="trials-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Canonical data</p>
+              <h2 id="trials-title">Trials</h2>
+            </div>
+            <p id="table-summary" class="subtle" aria-live="polite"></p>
+          </div>
+          <div class="table-shell">
+            <table>
+              <caption class="sr-only">Trials matching the active filters</caption>
+              <thead id="trial-head"></thead>
+              <tbody id="trial-body"></tbody>
+            </table>
+          </div>
+          <p id="table-note" class="table-note"></p>
+        </section>
+      </div>
+    </main>
+
+    <dialog id="trial-inspector" class="trial-inspector" aria-labelledby="inspector-title">
+      <div class="inspector-heading">
+        <div>
+          <p class="eyebrow">Selected trial</p>
+          <h2 id="inspector-title">Trial</h2>
+        </div>
+        <button id="close-inspector" class="button button-quiet" type="button">
+          Close
+        </button>
+      </div>
+      <dl id="inspector-summary" class="inspector-summary"></dl>
+      <div class="inspector-config-heading">
+        <h3>Configuration</h3>
+        <button id="copy-trial-config" class="button button-quiet" type="button">
+          Copy config JSON
+        </button>
+      </div>
+      <pre id="inspector-config"><code>{}</code></pre>
+      <div id="inspector-extra" class="inspector-extra"></div>
+      <p id="inspector-feedback" class="chart-caption" aria-live="polite"></p>
+    </dialog>
+  </body>
+</html>

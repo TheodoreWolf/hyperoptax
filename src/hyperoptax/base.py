@@ -1,5 +1,6 @@
 import dataclasses
 import inspect
+import time
 import warnings
 from dataclasses import dataclass
 from typing import Callable
@@ -7,6 +8,8 @@ from typing import Callable
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree
+
+from hyperoptax.recording import BatchCallback, BatchCompleted
 
 
 def _validate_func(func):
@@ -61,6 +64,8 @@ class Optimizer:
         key: jax.Array,  # ()  PRNG key
         func: Callable,  # (key, config) -> ()  scalar result
         n_iterations: int,
+        *,
+        callback: BatchCallback | None = None,
     ) -> tuple[OptimizerState, tuple[PyTree, jax.Array]]:
         """
         High Level API for optimizing a function over a space.
@@ -69,21 +74,37 @@ class Optimizer:
 
         ``func`` must return a scalar (``()`` shape). If your function returns
         shape ``(1,)``, call ``.squeeze()`` inside ``func`` before returning.
+
+        When ``callback`` is provided, it is called synchronously after each
+        completed batch with host-valued parameters and results. Callback
+        exceptions propagate unchanged.
         """
         _validate_func(func)
         params_hist, results_hist = [], []
         params, results = None, None
-        for _ in range(n_iterations):
+        for batch_index in range(n_iterations):
             key, key_get, key_funcs, key_update = jax.random.split(key, 4)
             params = self.get_next_params(state, key_get, params, results)
             # params:        pytree, each leaf shape (n_parallel, ...)
             # func_keys:     (n_parallel, 2)
             # batch_results: (n_parallel,)
             func_keys = jax.random.split(key_funcs, self.n_parallel)
+            batch_started = time.perf_counter() if callback is not None else None
             batch_results = jax.vmap(func)(func_keys, params)  # (n_parallel,)
             state = self.update_state(state, key_update, batch_results, params)
             params_hist.append(params)
             results_hist.append(batch_results)
+            if callback is not None:
+                host_params, host_results = jax.device_get((params, batch_results))
+                duration_seconds = time.perf_counter() - batch_started
+                callback(
+                    BatchCompleted(
+                        batch_index=batch_index,
+                        params=host_params,
+                        results=host_results,
+                        duration_seconds=duration_seconds,
+                    )
+                )
         return state, (params_hist, results_hist)
 
     def optimize_scan(

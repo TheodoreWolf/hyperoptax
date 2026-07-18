@@ -16,6 +16,7 @@ from hyperoptax.grid import GridSearch
 # Kernels
 from hyperoptax.kernels import RBF, Matern
 from hyperoptax.random import RandomSearch
+from hyperoptax.recording import BatchCallback, BatchCompleted
 
 # Search spaces
 from hyperoptax.spaces import (
@@ -31,6 +32,9 @@ __all__ = [
     "BayesianSearch",
     "GridSearch",
     "RandomSearch",
+    # Recording
+    "BatchCallback",
+    "BatchCompleted",
     # Spaces
     "DiscreteSpace",
     "LinearSpace",

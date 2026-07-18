@@ -8,6 +8,7 @@ import optax
 from hyperoptax import acquisition as acq
 from hyperoptax import base, kernels
 from hyperoptax import spaces as sp
+from hyperoptax.recording import BatchCallback
 
 MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from GP fit
 
@@ -442,10 +443,18 @@ class BayesianSearch(base.Optimizer):
         has_overflow = (remaining % self.n_parallel) > 0
         return n_full + (1 if has_overflow else 0)
 
-    def optimize(self, state, key, func, n_iterations=None):
+    def optimize(
+        self,
+        state,
+        key,
+        func,
+        n_iterations=None,
+        *,
+        callback: BatchCallback | None = None,
+    ):
         if n_iterations is None:
             n_iterations = self._n_iterations(state)
-        return super().optimize(state, key, func, n_iterations)
+        return super().optimize(state, key, func, n_iterations, callback=callback)
 
     def optimize_scan(self, state, key, func, n_iterations=None):
         if n_iterations is None:
