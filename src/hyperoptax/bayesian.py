@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import optax
 
 from hyperoptax import acquisition as acq
-from hyperoptax import base, kernels
+from hyperoptax import base, kernels, utils
 from hyperoptax import spaces as sp
 
 MASK_VARIANCE = 1e12  # large diagonal added to masked rows to isolate them from GP fit
@@ -37,7 +37,7 @@ class BayesianSearchState(base.OptimizerState):
     log_length_scale: jax.Array  # (n_params,) per-dimension ARD length scales
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False)
 class BayesianSearch(base.Optimizer):
     """Bayesian optimisation with a Gaussian Process surrogate.
 
@@ -59,6 +59,10 @@ class BayesianSearch(base.Optimizer):
         n_restarts: Number of L-BFGS restarts seeded from the top candidates
             (default ``2``).
         n_lbfgs_steps: Gradient steps per L-BFGS restart (default ``10``).
+        lbfgs_memory_size: Length of the L-BFGS history buffer used to
+            approximate the inverse Hessian (default ``10``). Larger values
+            give a more accurate Newton direction per step at the cost of
+            more memory traffic on the history buffer.
         n_hparam_steps: Adam steps used to tune ``log_length_scale`` each
             iteration (default ``20``). Set to ``0`` to disable.
         n_warmup: Number of pure-random iterations before the GP is used
@@ -71,14 +75,15 @@ class BayesianSearch(base.Optimizer):
 
     jitter: float = 1e-6
     kernel: kernels.BaseKernel = dataclasses.field(
-        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=0.5)
+        default_factory=lambda: kernels.Matern(length_scale=1.0, nu=2.5)
     )
     acquisition: acq.BaseAcquisition = dataclasses.field(
-        default_factory=lambda: acq.PI(xi=0.01)
+        default_factory=lambda: acq.EI(xi=0.01)
     )
     n_candidates: int = 1000  # random candidates sampled for continuous spaces
     n_restarts: int = 2  # number of L-BFGS restarts (seeded from top candidates)
     n_lbfgs_steps: int = 10  # gradient steps per restart
+    lbfgs_memory_size: int = 10  # L-BFGS history length (inverse-Hessian approx)
     n_hparam_steps: int = 20  # Adam steps to tune log_length_scale each iteration
     n_warmup: int = 1  # pure-random evaluations before GP kicks in
     maximize: bool = True  # set False to minimize the objective
@@ -86,6 +91,7 @@ class BayesianSearch(base.Optimizer):
     hallucination: acq.BaseHallucination = dataclasses.field(
         default_factory=acq.SampleHallucination
     )
+    adam_learning_rate: float = 0.1
 
     @classmethod
     def init(cls, space, n_max=200, **kwargs):
@@ -131,18 +137,6 @@ class BayesianSearch(base.Optimizer):
     # Space helpers
     # ------------------------------------------------------------------
 
-    def _sample_candidates(self, space, key, n):
-        """Sample n random candidates from a continuous space."""
-        leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
-        keys_per_leaf = jax.random.split(key, len(leaves))
-        cols = [
-            jax.vmap(lambda k: leaf.sample(k).squeeze())(
-                jax.random.split(keys_per_leaf[j], n)
-            )
-            for j, leaf in enumerate(leaves)
-        ]
-        return jnp.stack(cols, axis=-1)  # (n, n_params)
-
     def _space_bounds(self, space):
         """Returns (lowers, uppers) arrays of shape (n_params,)."""
         leaves = jax.tree.leaves(space, is_leaf=lambda x: isinstance(x, sp.Space))
@@ -178,49 +172,36 @@ class BayesianSearch(base.Optimizer):
         var = jnp.clip(1.0 - jnp.sum(K_star * v.T, axis=1), 0.0)
         return mean, jnp.sqrt(var)
 
-    def _gp_posterior(self, X, y, mask, X_test, length_scale):
+    def get_gp_posterior(self, X, y, mask, X_test, length_scale):
         """Convenience: fit + predict in one call."""
         L, alpha, ymean = self._gp_fit(X, y, mask, length_scale)
         return self._gp_predict(X_test, L, alpha, ymean, X, length_scale)
 
-    @functools.cached_property
-    def _tune_hparams_fn(self):
-        """JIT-compiled hparam tuner, built lazily on first use.
-
-        Accepts all varying data as explicit JAX arguments so the compiled
-        XLA program is reused across iterations regardless of how many
-        observations have accumulated (no recompilation per new n_seen).
-        """
-        n_steps = self.n_hparam_steps
-
-        @jax.jit
-        def tune(X, y, mask, log_length_scale):
-            def neg_log_ml(log_ls):
-                ls = jnp.exp(log_ls)
-                L, alpha, ymean = self._gp_fit(X, y, mask, ls)
-                y_c = (y - ymean) * mask
-                return 0.5 * y_c @ alpha + jnp.sum(jnp.log(jnp.diag(L)))
-
-            adam = optax.adam(0.1)
-            opt_state = adam.init(log_length_scale)
-
-            def step(carry, _):
-                log_ls, opt_state = carry
-                grad = jax.grad(neg_log_ml)(log_ls)
-                updates, new_opt_state = adam.update(grad, opt_state)
-                return (optax.apply_updates(log_ls, updates), new_opt_state), None
-
-            (log_ls, _), _ = jax.lax.scan(
-                step, (log_length_scale, opt_state), None, length=n_steps
-            )
-            return log_ls
-
-        return tune
-
     def _tune_hparams(self, state: BayesianSearchState) -> jax.Array:
-        return self._tune_hparams_fn(
-            state.X, self._effective_y(state), state.mask, state.log_length_scale
+        """Adam loop on log_length_scale via marginal-likelihood minimisation."""
+        X = state.X
+        y = self._effective_y(state)
+        mask = state.mask
+
+        def neg_log_ml(log_ls):
+            ls = jnp.exp(log_ls)
+            L, alpha, ymean = self._gp_fit(X, y, mask, ls)
+            y_c = (y - ymean) * mask
+            return 0.5 * y_c @ alpha + jnp.sum(jnp.log(jnp.diag(L)))
+
+        adam = optax.adam(self.adam_learning_rate)
+        opt_state = adam.init(state.log_length_scale)
+
+        def step(carry, _):
+            log_ls, opt_state = carry
+            grad = jax.grad(neg_log_ml)(log_ls)
+            updates, new_opt_state = adam.update(grad, opt_state)
+            return (optax.apply_updates(log_ls, updates), new_opt_state), None
+
+        (log_ls, _), _ = jax.lax.scan(
+            step, (state.log_length_scale, opt_state), None, length=self.n_hparam_steps
         )
+        return log_ls
 
     # ------------------------------------------------------------------
     # Parameter selection
@@ -232,6 +213,54 @@ class BayesianSearch(base.Optimizer):
             key, self.n_candidates, (self.n_parallel,), replace=False
         )
         return X_cands[idxs]  # (n_parallel, n_params)
+
+    def _maximize_acquisition(
+        self, L, alpha, ymean, X_train, X_cands, y_max, lowers, uppers, length_scale
+    ):
+        """Multi-start L-BFGS argmax of the acquisition function on a fitted GP."""
+        n_lbfgs_restarts = min(self.n_restarts, self.n_candidates)
+        solver = optax.lbfgs(memory_size=self.lbfgs_memory_size)
+
+        mean_cands, std_cands = self._gp_predict(
+            X_cands, L, alpha, ymean, X_train, length_scale
+        )
+        acq_vals = self.acquisition(mean_cands, std_cands)
+        X_best_idxs = jnp.argsort(acq_vals)[-n_lbfgs_restarts:]
+        X_best = X_cands[X_best_idxs]  # (n_lbfgs_restarts, n_params)
+
+        def neg_acq(x):
+            K_star = self.kernel(x[None], X_train, length_scale=length_scale)
+            mean = K_star @ alpha + ymean
+            v = jax.scipy.linalg.cho_solve((L, True), K_star.T)
+            std = jnp.sqrt(jnp.clip(1.0 - jnp.sum(K_star * v.T, axis=1), 0.0))
+            return -self.acquisition(mean, std, y_max=y_max)[0]
+
+        def lbfgs_step(carry, _):
+            x, s = carry
+            val, grad = jax.value_and_grad(neg_acq)(x)
+            updates, new_s = solver.update(
+                grad, s, x, value=val, grad=grad, value_fn=neg_acq
+            )
+            return (
+                jnp.clip(optax.apply_updates(x, updates), lowers, uppers),
+                new_s,
+            ), None
+
+        def refine(x0):
+            (x_refined, _), _ = jax.lax.scan(
+                lbfgs_step,
+                (x0, solver.init(x0)),
+                None,
+                length=self.n_lbfgs_steps,
+            )
+            return x_refined
+
+        X_refined = jax.vmap(refine)(X_best)  # (n_seeds, n_params)
+        means, stds = self._gp_predict(
+            X_refined, L, alpha, ymean, X_train, length_scale
+        )
+        vals = self.acquisition(means, stds, y_max=y_max)
+        return X_refined[jnp.argmax(vals)]
 
     def _gp_select(self, state, key, X_cands, lowers, uppers, length_scale):
         """Kriging Believer: sequential L-BFGS with GP hallucination."""
@@ -247,77 +276,41 @@ class BayesianSearch(base.Optimizer):
             [state.mask, jnp.zeros(self.n_parallel, dtype=bool)], axis=0
         )
 
-        xs_raw_list = []
-        for i in range(self.n_parallel):
+        def hallucinate_step(carry, i):
+            X_ext, y_ext, mask_ext, key = carry
             key, key_liar = jax.random.split(key)
+
             L, alpha, ymean = self._gp_fit(X_ext, y_ext, mask_ext, length_scale)
-            mean_cands, std_cands = self._gp_predict(
-                X_cands, L, alpha, ymean, X_ext, length_scale
-            )
-            acq_vals = self.acquisition(mean_cands, std_cands)
             y_max = jnp.max(y_ext, where=mask_ext, initial=-jnp.inf)
 
-            n_seeds = min(self.n_restarts, self.n_candidates)
-            seed_idxs = jnp.argsort(acq_vals)[-n_seeds:]
-            seeds = X_cands[seed_idxs]  # (n_seeds, n_params)
-
-            # L-BFGS restarts: pick best via jnp.where so this is JAX-traceable
-            solver = optax.lbfgs()
-
-            def neg_acq(x):
-                K_star = self.kernel(x[None], X_ext, length_scale=length_scale)
-                mean = K_star @ alpha + ymean
-                v = jax.scipy.linalg.cho_solve((L, True), K_star.T)
-                std = jnp.sqrt(jnp.clip(1.0 - jnp.sum(K_star * v.T, axis=1), 0.0))
-                return -self.acquisition(mean, std, y_max=y_max)[0]
-
-            def lbfgs_step(carry, _):
-                x, s = carry
-                val, grad = jax.value_and_grad(neg_acq)(x)
-                updates, new_s = solver.update(
-                    grad, s, x, value=val, grad=grad, value_fn=neg_acq
-                )
-                return (
-                    jnp.clip(optax.apply_updates(x, updates), lowers, uppers),
-                    new_s,
-                ), None
-
-            def _lbfgs_restart(carry, x0):
-                best_x, best_val = carry
-                (x_refined, _), _ = jax.lax.scan(
-                    lbfgs_step,
-                    (x0, solver.init(x0)),
-                    None,
-                    length=self.n_lbfgs_steps,
-                )
-                mean_r, std_r = self._gp_predict(
-                    x_refined[None], L, alpha, ymean, X_ext, length_scale
-                )
-                val = self.acquisition(mean_r, std_r, y_max=y_max)[0]
-                best_x = jnp.where(val > best_val, x_refined, best_x)
-                best_val = jnp.where(val > best_val, val, best_val)
-                return (best_x, best_val), None
-
-            (best_x, _), _ = jax.lax.scan(
-                _lbfgs_restart,
-                (seeds[-1], acq_vals[seed_idxs[-1]]),
-                seeds,
+            best_x = self._maximize_acquisition(
+                L, alpha, ymean, X_ext, X_cands, y_max, lowers, uppers, length_scale
             )
 
-            # Hallucinate: use liar strategy to generate pseudo-observation
             mean_i, std_i = self._gp_predict(
                 best_x[None], L, alpha, ymean, X_ext, length_scale
             )
+            y_liar = self.hallucination(mean_i, std_i, key_liar, y_max)
             X_ext = X_ext.at[n_max + i].set(best_x)
-            y_ext = y_ext.at[n_max + i].set(
-                self.hallucination(mean_i, std_i, key_liar, y_max)
-            )
+            y_ext = y_ext.at[n_max + i].set(y_liar)
             mask_ext = mask_ext.at[n_max + i].set(True)
-            xs_raw_list.append(best_x)
+            return (X_ext, y_ext, mask_ext, key), best_x
 
-        return jnp.stack(xs_raw_list)  # (n_parallel, n_params)
+        _, xs_raw = jax.lax.scan(
+            hallucinate_step,
+            (X_ext, y_ext, mask_ext, key),
+            jnp.arange(self.n_parallel),
+        )
+        return xs_raw  # (n_parallel, n_params)
 
-    def _select_next_x(self, state, key):
+    def get_next_params(self, state, key, params=None, results=None):
+        """Select the next batch of ``n_parallel`` candidates.
+
+        During the first ``n_warmup`` iterations, candidates are chosen
+        uniformly at random. Afterwards, the GP posterior is used to maximise
+        the acquisition function via L-BFGS with Kriging Believer hallucination
+        for the parallel slots.
+        """
         key_sample, key_rest = jax.random.split(key)
         leaves = jax.tree.leaves(state.space, is_leaf=lambda x: isinstance(x, sp.Space))
         _, treedef = jax.tree.flatten(
@@ -326,7 +319,7 @@ class BayesianSearch(base.Optimizer):
         lowers, uppers = self._space_bounds(state.space)
         length_scale = jnp.exp(state.log_length_scale)
 
-        X_cands = self._sample_candidates(
+        X_cands = utils.sample_space_array(
             state.space, key_sample, self.n_candidates
         ).astype(jnp.float32)
 
@@ -339,32 +332,17 @@ class BayesianSearch(base.Optimizer):
         )
 
         # Apply per-leaf transforms (rounds QLinearSpace/QLogSpace to integers, etc.)
+        # Transforms are element-wise, so vectorise the n_parallel axis.
+        # TODO: transform is a bit overloaded - maybe move to a separate method?
         xs_out = jnp.stack(
-            [
-                jnp.stack(
-                    [
-                        leaf.transform(xs_raw[j, i : i + 1]).squeeze()
-                        for i, leaf in enumerate(leaves)
-                    ]
-                )
-                for j in range(self.n_parallel)
-            ]
+            [leaf.transform(xs_raw[:, i]) for i, leaf in enumerate(leaves)],
+            axis=-1,
         )  # (n_parallel, n_params)
 
         batch_params = treedef.unflatten(
             [xs_out[:, i] for i in range(treedef.num_leaves)]
         )
         return batch_params
-
-    def get_next_params(self, state, key, params=None, results=None):
-        """Select the next batch of ``n_parallel`` candidates.
-
-        During the first ``n_warmup`` iterations, candidates are chosen
-        uniformly at random. Afterwards, the GP posterior is used to maximise
-        the acquisition function via L-BFGS with Kriging Believer hallucination
-        for the parallel slots.
-        """
-        return self._select_next_x(state, key)
 
     def _write_observation_batch(self, state, x_new, results, n):
         """Write n_parallel observations to the padded state buffers starting at slot n.
@@ -395,6 +373,7 @@ class BayesianSearch(base.Optimizer):
 
         return jax.lax.fori_loop(0, n_parallel, body, state)
 
+    @functools.partial(jax.jit, static_argnums=(0,))
     def update_state(self, state, key, results, params):
         """Record new observations and update ARD length scales.
 

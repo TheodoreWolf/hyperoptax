@@ -1,11 +1,9 @@
 import dataclasses
 
 import jax
-import jax.numpy as jnp
 from jaxtyping import PyTree
 
 from hyperoptax import base, utils
-from hyperoptax import spaces as sp
 
 
 @dataclasses.dataclass
@@ -33,20 +31,7 @@ class RandomSearch(base.Optimizer):
         results=None,
     ) -> PyTree:
         """Sample ``n_parallel`` independent configurations from the search space."""
-        def sample_once(k):
-            subkeys = utils.make_key_tree(state.space, k)
-            sample = jax.tree.map(
-                lambda x, sk: x.sample(sk),
-                state.space,
-                subkeys,
-                is_leaf=lambda x: isinstance(x, sp.Space),
-            )
-            # Squeeze (1,) per-leaf values to scalars for stacking
-            return jax.tree.map(lambda leaf: leaf.squeeze(), sample)
-
-        keys = jax.random.split(key, self.n_parallel)
-        samples = [sample_once(k) for k in keys]
-        return jax.tree.map(lambda *leaves: jnp.stack(leaves), *samples)
+        return utils.sample_space_pytree(state.space, key, self.n_parallel)
 
     def update_state(
         self,
